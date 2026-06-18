@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import subprocess
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -22,6 +24,21 @@ PAGE_SIZE = 20
 
 config = load_config()
 engine = get_engine()
+
+
+def _resolve_git_commit() -> str:
+    sha = os.environ.get("GIT_COMMIT", "")
+    if sha:
+        return sha[:7]
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        return "dev"
+
+
+GIT_COMMIT = _resolve_git_commit()
 
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -97,7 +114,7 @@ def _is_read(article: Article, token_obj: Optional[Token], read_ids: set[int]) -
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, news_token: Optional[str] = Cookie(default=None)):
-    response = templates.TemplateResponse(request, "index.html")
+    response = templates.TemplateResponse(request, "index.html", {"git_commit": GIT_COMMIT})
     with get_session(engine) as session:
         token_obj = _ensure_token(news_token, session, response)
         response.set_cookie("news_token", token_obj.token, max_age=60 * 60 * 24 * 3650, httponly=False, samesite="lax")
