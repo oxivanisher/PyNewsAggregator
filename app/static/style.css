@@ -102,6 +102,15 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 
 .news-item.read { opacity: 0.55; }
 
+.news-item.expanded {
+  opacity: 1;
+  border-color: var(--accent);
+}
+
+.news-item.expanded .feed-tag { color: var(--accent); background: rgba(99, 102, 241, 0.1); }
+.news-item.expanded .article-title { color: var(--text); }
+.news-item.expanded .dot { color: var(--dot-unread); }
+
 .article-header {
   display: grid;
   grid-template-columns: 1.2rem auto auto 1fr 1rem;

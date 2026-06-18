@@ -163,7 +163,9 @@
       const thisId = body.id.replace('body-', '');
       if (thisId === String(exceptId)) return;
       body.classList.add('hidden');
-      document.querySelector('#article-' + thisId + ' .chevron').textContent = '▶';
+      const article = document.querySelector('#article-' + thisId);
+      article.querySelector('.chevron').textContent = '▶';
+      article.classList.remove('expanded');
     });
   }
 
@@ -176,10 +178,12 @@
     if (isOpen) {
       body.classList.add('hidden');
       chevron.textContent = '▶';
+      item.classList.remove('expanded');
     } else {
       closeAll(id);
       body.classList.remove('hidden');
       chevron.textContent = '▼';
+      item.classList.add('expanded');
       if (readMode === 'expand' && !item.classList.contains('read')) {
         markRead(id, item);
       }
