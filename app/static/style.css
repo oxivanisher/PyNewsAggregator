@@ -81,7 +81,19 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.app-title { font-size: 1.1rem; font-weight: 600; }
+.app-title-btn {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--radius);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.app-title-btn:hover { background: var(--bg-hover); }
 
 .unread-badge {
   display: inline-block;
@@ -97,9 +109,6 @@ body {
 }
 .unread-badge:empty { display: none; }
 
-.header-actions { display: flex; gap: 0.5rem; align-items: center; }
-.btn-icon { padding: 0.3rem 0.5rem; font-size: 1rem; }
-
 .refresh-timer {
   flex: 1;
   text-align: center;
@@ -107,6 +116,13 @@ body {
   font-family: monospace;
   color: var(--text-muted);
   letter-spacing: 0.03em;
+  padding: 0 0.5rem;
+}
+
+.btn-settings {
+  font-size: 1.1rem;
+  padding: 0.25rem 0.5rem;
+  flex-shrink: 0;
 }
 
 /* ── buttons ───────────────────────────────────────────────────────────────── */
@@ -340,6 +356,8 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
   padding: 1.5rem;
   width: 100%;
   max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
 }
 
 .modal h2 { font-size: 1.1rem; margin-bottom: 0.5rem; }
@@ -395,8 +413,27 @@ label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bot
 }
 .modal-close:hover { color: var(--text); }
 
-/* ── feeds modal list ──────────────────────────────────────────────────────── */
-.feeds-list { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem; max-height: 60vh; overflow-y: auto; }
+/* ── settings modal sections ───────────────────────────────────────────────── */
+.settings-section-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 1.25rem 0 0.6rem;
+}
+.settings-section-title:first-of-type { margin-top: 0.25rem; }
+
+.theme-picker { display: flex; gap: 0.5rem; }
+.theme-picker .btn-secondary { flex: 1; justify-content: center; }
+.theme-btn-active {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: var(--accent) !important;
+}
+
+/* ── feeds list ────────────────────────────────────────────────────────────── */
+.feeds-list { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem; max-height: 35vh; overflow-y: auto; }
 
 .feed-row { padding: 0.6rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); transition: opacity 0.2s; }
 .feed-row--hidden { opacity: 0.45; }

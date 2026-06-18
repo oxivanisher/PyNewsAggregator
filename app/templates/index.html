@@ -17,13 +17,11 @@
 <body>
 
 <header class="app-header">
-  <span class="app-title">📰 News <span id="unread-badge" class="unread-badge"></span></span>
+  <button class="app-title-btn" onclick="markAllRead()" title="Mark all as read">
+    📰 News <span id="unread-badge" class="unread-badge"></span>
+  </button>
   <span id="refresh-timer" class="refresh-timer"></span>
-  <div class="header-actions">
-    <button class="btn-ghost btn-icon" id="theme-toggle" onclick="cycleTheme()" title="Toggle light/dark mode"></button>
-    <button class="btn-ghost" onclick="markAllRead()" title="Mark all as read">✓ All read</button>
-    <button class="btn-ghost" onclick="openTokenModal()" title="Manage sync token">⇄ Token</button>
-  </div>
+  <button class="btn-ghost btn-settings" onclick="openSettingsModal()" title="Settings">⚙</button>
 </header>
 
 
@@ -37,34 +35,32 @@
 <button class="fab-next" onclick="nextUnread()" title="Next unread (n / j)">&#9733;</button>
 
 <footer class="app-footer">
-  <a href="#" onclick="openFeedsModal(); return false;">sources</a>
-  &nbsp;·&nbsp;
   <a href="https://github.com/oxivanisher/PyNewsAggregator/commit/{{ git_commit }}"
      target="_blank" rel="noopener noreferrer">{{ git_commit }}</a>
 </footer>
 
-<!-- Feeds modal -->
-<div id="feeds-modal" class="modal-backdrop hidden" onclick="closeFeedsModal(event)">
+<!-- Settings modal -->
+<div id="settings-modal" class="modal-backdrop hidden" onclick="closeSettingsModal(event)">
   <div class="modal">
-    <h2>Sources</h2>
+    <h2>Settings</h2>
+    <button class="modal-close" onclick="closeSettingsModal()">✕</button>
+
+    <h3 class="settings-section-title">Theme</h3>
+    <div class="theme-picker">
+      <button class="btn-secondary" id="theme-btn-auto"  onclick="applyTheme('auto')">◑ Auto</button>
+      <button class="btn-secondary" id="theme-btn-light" onclick="applyTheme('light')">☀ Light</button>
+      <button class="btn-secondary" id="theme-btn-dark"  onclick="applyTheme('dark')">☾ Dark</button>
+    </div>
+
+    <h3 class="settings-section-title">Sources</h3>
     <div id="feeds-list" class="feeds-list"></div>
-    <button class="modal-close" onclick="closeFeedsModal()">✕</button>
-  </div>
-</div>
 
-<!-- Token modal -->
-<div id="token-modal" class="modal-backdrop hidden" onclick="closeTokenModal(event)">
-  <div class="modal">
-    <h2>Sync Token</h2>
+    <h3 class="settings-section-title">Sync Token</h3>
     <p class="modal-hint">Use the same token on all your devices to share read state.</p>
-
     <div class="token-display">
       <code id="token-value"></code>
       <button class="btn-secondary" onclick="copyToken()">Copy</button>
     </div>
-
-    <hr>
-
     <form method="POST" action="/token/import">
       <label for="import-input">Import token</label>
       <div class="import-row">
@@ -72,14 +68,9 @@
         <button class="btn-primary" type="submit">Apply</button>
       </div>
     </form>
-
-    <hr>
-
     <form method="POST" action="/token/new" onsubmit="return confirm('This creates a fresh token with no read history. Continue?')">
       <button class="btn-danger" type="submit">Generate new token</button>
     </form>
-
-    <button class="modal-close" onclick="closeTokenModal()">✕</button>
   </div>
 </div>
 
@@ -93,36 +84,34 @@
       document.documentElement.setAttribute('data-theme', theme);
       localStorage.setItem('theme', theme);
     }
-    updateThemeIcon();
+    syncThemeButtons();
   }
 
   function currentTheme() {
     return document.documentElement.getAttribute('data-theme') || 'auto';
   }
 
-  function cycleTheme() {
-    const order = ['auto', 'light', 'dark'];
-    const next = order[(order.indexOf(currentTheme()) + 1) % order.length];
-    applyTheme(next);
-  }
-
-  function updateThemeIcon() {
-    const btn = document.getElementById('theme-toggle');
-    if (!btn) return;
+  function syncThemeButtons() {
     const t = currentTheme();
-    if (t === 'light')     { btn.textContent = '☀'; btn.title = 'Light mode (click for dark)'; }
-    else if (t === 'dark') { btn.textContent = '☾'; btn.title = 'Dark mode (click for auto)'; }
-    else                   { btn.textContent = '◑'; btn.title = 'Auto mode (click for light)'; }
+    ['auto', 'light', 'dark'].forEach(name => {
+      const btn = document.getElementById('theme-btn-' + name);
+      if (btn) btn.classList.toggle('theme-btn-active', name === t);
+    });
   }
 
-  updateThemeIcon();
+  // ── settings modal ─────────────────────────────────────────────────────────
+  function openSettingsModal() {
+    document.getElementById('settings-modal').classList.remove('hidden');
+    syncThemeButtons();
 
-  // ── feeds modal ────────────────────────────────────────────────────────────
-  function openFeedsModal() {
-    const modal = document.getElementById('feeds-modal');
-    const list  = document.getElementById('feeds-list');
+    // Load token
+    fetch('/token/export').then(r => r.json()).then(data => {
+      document.getElementById('token-value').textContent = data.token || '(none)';
+    });
+
+    // Load feeds
+    const list = document.getElementById('feeds-list');
     list.innerHTML = '<p class="modal-hint">Loading…</p>';
-    modal.classList.remove('hidden');
     fetch('/feeds').then(r => r.json()).then(feeds => {
       if (!feeds.length) { list.innerHTML = '<p class="modal-hint">No feeds configured.</p>'; return; }
       list.innerHTML = feeds.map(f => {
@@ -147,6 +136,12 @@
     }).catch(() => { list.innerHTML = '<p class="modal-hint">Failed to load feeds.</p>'; });
   }
 
+  function closeSettingsModal(e) {
+    if (!e || e.target.id === 'settings-modal' || e.target.classList.contains('modal-close')) {
+      document.getElementById('settings-modal').classList.add('hidden');
+    }
+  }
+
   async function toggleFeedHidden(feedId, checkbox) {
     checkbox.disabled = true;
     try {
@@ -167,32 +162,6 @@
     }
   }
 
-  function closeFeedsModal(e) {
-    if (!e || e.target.id === 'feeds-modal' || e.target.classList.contains('modal-close')) {
-      document.getElementById('feeds-modal').classList.add('hidden');
-    }
-  }
-
-  function escHtml(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-  }
-
-  // ── token ──────────────────────────────────────────────────────────────────
-  function openTokenModal() {
-    fetch('/token/export')
-      .then(r => r.json())
-      .then(data => {
-        document.getElementById('token-value').textContent = data.token || '(none)';
-        document.getElementById('token-modal').classList.remove('hidden');
-      });
-  }
-
-  function closeTokenModal(e) {
-    if (!e || e.target.id === 'token-modal' || e.target.classList.contains('modal-close')) {
-      document.getElementById('token-modal').classList.add('hidden');
-    }
-  }
-
   function copyToken() {
     const val = document.getElementById('token-value').textContent;
     navigator.clipboard.writeText(val).then(() => {
@@ -200,6 +169,10 @@
       btn.textContent = 'Copied!';
       setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
     });
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
   // ── mark all read ──────────────────────────────────────────────────────────
@@ -288,6 +261,7 @@
   }
 
   let refreshCountdown = null;
+  let _refreshPoll = null;
 
   async function fetchStatus() {
     try {
@@ -301,8 +275,18 @@
     const el = document.getElementById('refresh-timer');
     if (!el) return;
     if (refreshCountdown === null) { el.textContent = ''; return; }
-    if (refreshCountdown <= 0)    { el.textContent = 'refreshing…'; return; }
-    el.textContent = `next: ${Math.ceil(refreshCountdown / 60)}m`;
+    if (refreshCountdown > 0) {
+      el.textContent = `next: ${Math.ceil(refreshCountdown / 60)}m`;
+      // Job has fired — stop aggressive polling if it was running
+      if (_refreshPoll) { clearInterval(_refreshPoll); _refreshPoll = null; }
+      return;
+    }
+    // Countdown expired: show refreshing and poll every 3 s until the scheduler
+    // sets a new next_run_time (which it does as soon as the job starts).
+    el.textContent = 'refreshing…';
+    if (!_refreshPoll) {
+      _refreshPoll = setInterval(fetchStatus, 3000);
+    }
   }
 
   async function updateUnreadCount() {
