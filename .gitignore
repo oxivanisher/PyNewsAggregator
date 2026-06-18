@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# App data
+data/
+*.db
+
+# Config (keep example, ignore real one)
+config.yaml
+!config.example.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Docker
+.dockerignore

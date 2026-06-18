@@ -1,0 +1,63 @@
+{% for idx in range(items | length) %}
+{% set item = items[idx] %}
+{% set article = item.article %}
+{% set feed = item.feed %}
+{% set is_read = item.is_read %}
+
+{% if divider_idx is not none and idx == divider_idx %}
+<div class="watermark-divider">
+  <span>— you were here —</span>
+</div>
+{% endif %}
+
+<article
+  class="news-item{% if is_read %} read{% endif %}"
+  id="article-{{ article.id }}"
+  {% if not is_read %}
+    {% if feed.read_mode == 'scroll' %}
+      hx-post="/read/{{ article.id }}"
+      hx-trigger="intersect once"
+      hx-swap="none"
+      hx-on::after-request="markReadFromHtmx({{ article.id }})"
+    {% elif feed.read_mode == 'load' %}
+      hx-post="/read/{{ article.id }}"
+      hx-trigger="load"
+      hx-swap="none"
+      hx-on::after-request="markReadFromHtmx({{ article.id }})"
+    {% endif %}
+  {% endif %}
+>
+  <div class="article-header" onclick="toggleArticle({{ article.id }}, '{{ feed.read_mode }}')">
+    <span class="dot">{{ '○' if is_read else '●' }}</span>
+    <span class="feed-tag">{{ feed.name }}</span>
+    <span class="article-time">{{ article.published_at | time_ago }}</span>
+    <span class="article-title">{{ article.title }}</span>
+    <span class="chevron">▶</span>
+  </div>
+
+  <div class="article-body hidden" id="body-{{ article.id }}">
+    {% if article.content %}
+      <div class="article-content">{{ article.content | safe }}</div>
+    {% elif article.summary %}
+      <div class="article-content">{{ article.summary | safe }}</div>
+    {% else %}
+      <p class="no-content">No content in feed.</p>
+    {% endif %}
+    {% if article.link %}
+      <a class="open-link" href="{{ article.link }}" target="_blank" rel="noopener noreferrer">↗ Open original</a>
+    {% endif %}
+  </div>
+</article>
+
+{% endfor %}
+
+{% if has_more %}
+<div id="load-more"
+     hx-get="/articles?offset={{ next_offset }}&watermark_shown={{ watermark_shown }}"
+     hx-trigger="intersect once"
+     hx-swap="outerHTML">
+  <div class="loading">Loading more…</div>
+</div>
+{% else %}
+<div class="end-of-feed">— end —</div>
+{% endif %}

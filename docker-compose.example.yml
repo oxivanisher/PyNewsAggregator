@@ -1,0 +1,9 @@
+services:
+  pynewsaggregator:
+    image: ghcr.io/oxivanisher/pynewsaggregator:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    restart: unless-stopped

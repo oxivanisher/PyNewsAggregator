@@ -1,0 +1,35 @@
+defaults:
+  # How often to check feeds, in seconds (default: 3600 = 1 hour)
+  check_interval: 3600
+  # Maximum articles to keep per feed before oldest are pruned
+  max_articles: 500
+  # How articles are marked as read: expand | scroll | load
+  #   expand - only when you click to open the article
+  #   scroll - automatically when the article scrolls into view
+  #   load   - automatically when the article first appears in the timeline
+  read_mode: expand
+
+# Global filters applied to all feeds (hide matching headlines)
+filters:
+  - type: substring
+    pattern: "sponsored"
+  - type: substring
+    pattern: "advertisement"
+  - type: regex
+    pattern: "\\[AD\\d?\\]"
+
+feeds:
+  - name: Hacker News
+    url: https://news.ycombinator.com/rss
+    check_interval: 900   # override: check every 15 minutes
+
+  - name: BBC News
+    url: https://feeds.bbci.co.uk/news/rss.xml
+    # inherits global defaults
+
+  - name: Python Releases
+    url: https://www.python.org/downloads/feed.xml
+    read_mode: load       # just track; auto-mark as read when seen
+    filters:
+      - type: substring
+        pattern: "security"  # per-feed extra filter on top of global ones

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PyNewsAggregator</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+</head>
+<body>
+
+<header class="app-header">
+  <span class="app-title">📰 News</span>
+  <div class="header-actions">
+    <button class="btn-ghost" onclick="markAllRead()" title="Mark all as read">✓ All read</button>
+    <button class="btn-ghost" onclick="openTokenModal()" title="Manage sync token">⇄ Token</button>
+  </div>
+</header>
+
+<div id="new-banner" class="new-banner hidden">
+  <button onclick="loadNewArticles()">↑ <span id="new-count"></span> new articles — click to load</button>
+</div>
+
+<main id="article-list"
+      hx-get="/articles"
+      hx-trigger="load"
+      hx-swap="innerHTML">
+  <div class="loading">Loading…</div>
+</main>
+
+<!-- Token modal -->
+<div id="token-modal" class="modal-backdrop hidden" onclick="closeTokenModal(event)">
+  <div class="modal">
+    <h2>Sync Token</h2>
+    <p class="modal-hint">Use the same token on all your devices to share read state.</p>
+
+    <div class="token-display">
+      <code id="token-value"></code>
+      <button class="btn-secondary" onclick="copyToken()">Copy</button>
+    </div>
+
+    <hr>
+
+    <form method="POST" action="/token/import">
+      <label for="import-input">Import token</label>
+      <div class="import-row">
+        <input id="import-input" name="token" type="text" placeholder="Paste token here…" autocomplete="off">
+        <button class="btn-primary" type="submit">Apply</button>
+      </div>
+    </form>
+
+    <hr>
+
+    <form method="POST" action="/token/new" onsubmit="return confirm('This creates a fresh token with no read history. Continue?')">
+      <button class="btn-danger" type="submit">Generate new token</button>
+    </form>
+
+    <button class="modal-close" onclick="closeTokenModal()">✕</button>
+  </div>
+</div>
+
+<script>
+  // ── token ──────────────────────────────────────────────────────────────────
+  function openTokenModal() {
+    fetch('/token/export')
+      .then(r => r.json())
+      .then(data => {
+        document.getElementById('token-value').textContent = data.token || '(none)';
+        document.getElementById('token-modal').classList.remove('hidden');
+      });
+  }
+
+  function closeTokenModal(e) {
+    if (!e || e.target.id === 'token-modal' || e.target.classList.contains('modal-close')) {
+      document.getElementById('token-modal').classList.add('hidden');
+    }
+  }
+
+  function copyToken() {
+    const val = document.getElementById('token-value').textContent;
+    navigator.clipboard.writeText(val).then(() => {
+      const btn = document.querySelector('.token-display .btn-secondary');
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    });
+  }
+
+  // ── mark all read ──────────────────────────────────────────────────────────
+  function markAllRead() {
+    fetch('/watermark', {method: 'POST', redirect: 'manual'}).then(() => {
+      // Re-render the article list
+      htmx.ajax('GET', '/articles', {target: '#article-list', swap: 'innerHTML'});
+      hideBanner();
+    });
+  }
+
+  // ── SSE new articles ───────────────────────────────────────────────────────
+  let pendingNewCount = 0;
+
+  const evtSource = new EventSource('/events');
+  evtSource.onmessage = function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.new_articles) {
+        pendingNewCount += data.new_articles;
+        showBanner(pendingNewCount);
+      }
+    } catch (_) {}
+  };
+
+  function showBanner(count) {
+    document.getElementById('new-count').textContent = count;
+    document.getElementById('new-banner').classList.remove('hidden');
+  }
+
+  function hideBanner() {
+    pendingNewCount = 0;
+    document.getElementById('new-banner').classList.add('hidden');
+  }
+
+  function loadNewArticles() {
+    hideBanner();
+    htmx.ajax('GET', '/articles', {target: '#article-list', swap: 'innerHTML'});
+    window.scrollTo({top: 0, behavior: 'smooth'});
+  }
+
+  // ── article expand/collapse ────────────────────────────────────────────────
+  function toggleArticle(id, readMode) {
+    const body = document.getElementById('body-' + id);
+    const item = document.getElementById('article-' + id);
+    const chevron = item.querySelector('.chevron');
+    const isOpen = !body.classList.contains('hidden');
+
+    if (isOpen) {
+      body.classList.add('hidden');
+      chevron.textContent = '▶';
+    } else {
+      body.classList.remove('hidden');
+      chevron.textContent = '▼';
+      if (readMode === 'expand' && !item.classList.contains('read')) {
+        markRead(id, item);
+      }
+    }
+  }
+
+  function markRead(id, itemEl) {
+    if (!itemEl) itemEl = document.getElementById('article-' + id);
+    if (itemEl && itemEl.classList.contains('read')) return;
+    fetch('/read/' + id, {method: 'POST'});
+    if (itemEl) {
+      itemEl.classList.add('read');
+      const dot = itemEl.querySelector('.dot');
+      if (dot) dot.textContent = '○';
+    }
+  }
+
+  // scroll/load read mode: called by htmx on intersect/load via hx-on
+  function markReadFromHtmx(id) {
+    markRead(id, document.getElementById('article-' + id));
+  }
+</script>
+</body>
+</html>
