@@ -191,7 +191,7 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
   max-width: 100%;
   height: auto;
   border-radius: 4px;
-  margin: 0.75rem 0;
+  margin: 1.25rem 0;
 }
 .article-content p { margin-bottom: 0.75rem; }
 .article-content p:last-child { margin-bottom: 0; }
