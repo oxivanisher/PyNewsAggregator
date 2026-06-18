@@ -76,6 +76,17 @@ class HiddenFeed(Base):
     feed_id = Column(Integer, ForeignKey("feeds.id", ondelete="CASCADE"), primary_key=True)
 
 
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, ForeignKey("tokens.token", ondelete="CASCADE"), nullable=True)
+    endpoint = Column(String, nullable=False, unique=True)
+    p256dh = Column(String, nullable=False)
+    auth = Column(String, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 def _migrate(engine) -> None:
     """Add columns that didn't exist in earlier versions of the schema."""
     migrations = [

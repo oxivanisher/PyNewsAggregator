@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import subprocess
@@ -10,13 +11,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import (
+    Encoding, NoEncryption, PrivateFormat, PublicFormat,
+)
 from fastapi import Cookie, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .config import load_config
-from .db import Article, Feed, HiddenFeed, ReadArticle, Token, get_engine, get_session
+from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_engine, get_session
 from .fetcher import _sse_queues, start_scheduler, stop_scheduler
 import app.fetcher as fetcher_module
 
@@ -41,6 +46,34 @@ def _resolve_git_commit() -> str:
 GIT_COMMIT = _resolve_git_commit()
 
 BASE_DIR = Path(__file__).parent
+
+
+# ── VAPID keys ────────────────────────────────────────────────────────────────
+
+def _load_or_create_vapid_keys() -> tuple[str, str]:
+    """Return (private_key_pem, public_key_base64url), generating and persisting if needed."""
+    db_path = os.environ.get("DB_PATH", "data/news.db")
+    keys_path = Path(os.path.dirname(db_path)) / "vapid_keys.json"
+    if keys_path.exists():
+        data = json.loads(keys_path.read_text())
+        return data["private_key"], data["public_key"]
+
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    private_pem = private_key.private_bytes(
+        Encoding.PEM, PrivateFormat.TraditionalOpenSSL, NoEncryption()
+    ).decode()
+    pub_bytes = private_key.public_key().public_bytes(
+        Encoding.X962, PublicFormat.UncompressedPoint
+    )
+    public_b64url = base64.urlsafe_b64encode(pub_bytes).rstrip(b"=").decode()
+
+    keys_path.parent.mkdir(parents=True, exist_ok=True)
+    keys_path.write_text(json.dumps({"private_key": private_pem, "public_key": public_b64url}))
+    return private_pem, public_b64url
+
+
+VAPID_PRIVATE_KEY, VAPID_PUBLIC_KEY = _load_or_create_vapid_keys()
+VAPID_CONTACT = os.environ.get("VAPID_CONTACT", "mailto:noreply@localhost")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 
@@ -67,6 +100,9 @@ templates.env.filters["time_ago"] = _time_ago
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     fetcher_module._event_loop = asyncio.get_running_loop()
+    fetcher_module._vapid_private_key = VAPID_PRIVATE_KEY
+    fetcher_module._vapid_claims = {"sub": VAPID_CONTACT}
+    fetcher_module._push_engine = engine
     start_scheduler(config, engine)
     yield
     stop_scheduler()
@@ -74,6 +110,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    content = (BASE_DIR / "static" / "sw.js").read_text()
+    return Response(content, media_type="application/javascript",
+                    headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
 
 
 # ── token helpers ─────────────────────────────────────────────────────────────
@@ -340,6 +383,49 @@ async def token_new():
     response = RedirectResponse("/", status_code=303)
     response.set_cookie("news_token", new_token, max_age=60 * 60 * 24 * 3650, httponly=True, samesite="lax")
     return response
+
+
+@app.get("/vapid-public-key")
+async def vapid_public_key():
+    return {"public_key": VAPID_PUBLIC_KEY}
+
+
+@app.post("/push/subscribe")
+async def push_subscribe(request: Request, news_token: Optional[str] = Cookie(default=None)):
+    data = await request.json()
+    endpoint = data.get("endpoint", "")
+    keys = data.get("keys", {})
+    p256dh = keys.get("p256dh", "")
+    auth = keys.get("auth", "")
+    if not endpoint or not p256dh or not auth:
+        return Response("Missing fields", status_code=400)
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        existing = session.query(PushSubscription).filter(
+            PushSubscription.endpoint == endpoint
+        ).first()
+        if existing:
+            existing.token = token_obj.token
+            existing.p256dh = p256dh
+            existing.auth = auth
+        else:
+            session.add(PushSubscription(
+                token=token_obj.token, endpoint=endpoint, p256dh=p256dh, auth=auth,
+            ))
+    return {"ok": True}
+
+
+@app.delete("/push/subscribe")
+async def push_unsubscribe(request: Request):
+    data = await request.json()
+    endpoint = data.get("endpoint", "")
+    if not endpoint:
+        return Response("Missing endpoint", status_code=400)
+    with get_session(engine) as session:
+        session.query(PushSubscription).filter(
+            PushSubscription.endpoint == endpoint
+        ).delete(synchronize_session=False)
+    return {"ok": True}
 
 
 @app.get("/events")

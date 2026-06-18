@@ -13,11 +13,14 @@ import nh3
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import AppConfig, FeedConfig, FilterConfig, FilterType
-from .db import Article, Feed, HiddenFeed, ReadArticle, get_session
+from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, get_session
 
 _sse_queues: list[asyncio.Queue] = []
 _event_loop: Optional[asyncio.AbstractEventLoop] = None
 _scheduler = BackgroundScheduler(daemon=True)
+_vapid_private_key: Optional[str] = None
+_vapid_claims: Optional[dict] = None
+_push_engine = None
 
 FETCH_TIMEOUT = 30  # seconds per feed HTTP request
 
@@ -175,8 +178,44 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
 
         feed.last_fetched_at = datetime.now(timezone.utc)
 
-    if new_count > 0 and _event_loop and not _event_loop.is_closed():
-        asyncio.run_coroutine_threadsafe(_broadcast(new_count), _event_loop)
+    if new_count > 0:
+        if _event_loop and not _event_loop.is_closed():
+            asyncio.run_coroutine_threadsafe(_broadcast(new_count), _event_loop)
+        if _vapid_private_key and _push_engine:
+            _send_push(new_count, feed_config.name)
+
+
+def _send_push(count: int, feed_name: str) -> None:
+    try:
+        from pywebpush import WebPushException, webpush
+    except ImportError:
+        return
+
+    body = f"{count} new article{'s' if count > 1 else ''} from {feed_name}"
+    payload = json.dumps({"title": "📰 News", "body": body})
+
+    with get_session(_push_engine) as session:
+        subs = session.query(PushSubscription).all()
+        to_delete = []
+        for sub in subs:
+            try:
+                webpush(
+                    subscription_info={
+                        "endpoint": sub.endpoint,
+                        "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
+                    },
+                    data=payload,
+                    vapid_private_key=_vapid_private_key,
+                    vapid_claims=_vapid_claims,
+                    timeout=10,
+                )
+            except WebPushException as exc:
+                if exc.response is not None and exc.response.status_code in (404, 410):
+                    to_delete.append(sub)
+            except Exception:
+                pass
+        for sub in to_delete:
+            session.delete(sub)
 
 
 async def _broadcast(count: int) -> None:
