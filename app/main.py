@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from .config import load_config
-from .db import Article, Feed, ReadArticle, Token, get_engine, get_session
+from .db import Article, Feed, HiddenFeed, ReadArticle, Token, get_engine, get_session
 from .fetcher import _sse_queues, start_scheduler, stop_scheduler
 import app.fetcher as fetcher_module
 
@@ -110,6 +110,14 @@ def _is_read(article: Article, token_obj: Optional[Token], read_ids: set[int]) -
     return False
 
 
+def _hidden_feed_subq(token: str, session):
+    return (
+        session.query(HiddenFeed.feed_id)
+        .filter(HiddenFeed.token == token)
+        .scalar_subquery()
+    )
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -136,10 +144,11 @@ async def articles(
             for r in session.query(ReadArticle).filter(ReadArticle.token == token_obj.token)
         }
 
+        hidden_subq = _hidden_feed_subq(token_obj.token, session)
         rows = (
             session.query(Article, Feed)
             .join(Feed)
-            .filter(Article.filtered.is_(False))
+            .filter(Article.filtered.is_(False), ~Article.feed_id.in_(hidden_subq))
             .order_by(Article.published_at.desc())
             .offset(offset)
             .limit(PAGE_SIZE + 1)
@@ -186,10 +195,11 @@ async def articles_prepend(
             for r in session.query(ReadArticle).filter(ReadArticle.token == token_obj.token)
         }
 
+        hidden_subq = _hidden_feed_subq(token_obj.token, session)
         rows = (
             session.query(Article, Feed)
             .join(Feed)
-            .filter(Article.filtered.is_(False), Article.id > since_id)
+            .filter(Article.filtered.is_(False), Article.id > since_id, ~Article.feed_id.in_(hidden_subq))
             .order_by(Article.published_at.desc())
             .limit(PAGE_SIZE)
             .all()
@@ -201,6 +211,69 @@ async def articles_prepend(
         ]
 
         return templates.TemplateResponse(request, "_articles_prepend.html", {"items": items})
+
+
+@app.get("/unread-count")
+async def unread_count(news_token: Optional[str] = Cookie(default=None)):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+
+        read_ids_subq = (
+            session.query(ReadArticle.article_id)
+            .filter(ReadArticle.token == token_obj.token)
+            .scalar_subquery()
+        )
+        hidden_subq = _hidden_feed_subq(token_obj.token, session)
+        query = session.query(Article).filter(
+            Article.filtered.is_(False),
+            ~Article.id.in_(read_ids_subq),
+            ~Article.feed_id.in_(hidden_subq),
+        )
+        if token_obj.watermark_at:
+            query = query.filter(Article.published_at > token_obj.watermark_at)
+
+        return {"unread": query.count()}
+
+
+@app.get("/feeds")
+async def list_feeds(news_token: Optional[str] = Cookie(default=None)):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        hidden_ids = {
+            row[0] for row in session.query(HiddenFeed.feed_id)
+            .filter(HiddenFeed.token == token_obj.token)
+        }
+        feeds = session.query(Feed).order_by(Feed.name).all()
+        result = []
+        for feed in feeds:
+            count = (
+                session.query(Article)
+                .filter(Article.feed_id == feed.id, Article.filtered.is_(False))
+                .count()
+            )
+            result.append({
+                "id": feed.id,
+                "name": feed.name,
+                "url": feed.url,
+                "check_interval": feed.check_interval,
+                "read_mode": feed.read_mode,
+                "last_fetched_at": feed.last_fetched_at.isoformat() + "Z" if feed.last_fetched_at else None,
+                "article_count": count,
+                "hidden": feed.id in hidden_ids,
+            })
+        return result
+
+
+@app.post("/feeds/{feed_id}/toggle")
+async def toggle_feed_hidden(feed_id: int, news_token: Optional[str] = Cookie(default=None)):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        existing = session.get(HiddenFeed, (token_obj.token, feed_id))
+        if existing:
+            session.delete(existing)
+            return {"hidden": False}
+        session.add(HiddenFeed(token=token_obj.token, feed_id=feed_id))
+        return {"hidden": True}
 
 
 @app.get("/status")

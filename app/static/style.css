@@ -1,6 +1,7 @@
 /* ── reset & base ──────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── dark theme (default) ───────────────────────────────────────────────────── */
 :root {
   --bg: #0f1117;
   --bg-card: #1a1d27;
@@ -17,6 +18,43 @@
   --danger: #ef4444;
   --radius: 8px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+/* ── light theme ────────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f1f5f9;
+    --bg-card: #ffffff;
+    --bg-hover: #e2e8f0;
+    --border: #cbd5e1;
+    --text: #0f172a;
+    --text-muted: #64748b;
+    --text-read: #94a3b8;
+    --dot-read: #cbd5e1;
+  }
+}
+
+/* manual overrides via data-theme attribute take precedence over media query */
+[data-theme="dark"] {
+  --bg: #0f1117;
+  --bg-card: #1a1d27;
+  --bg-hover: #21253a;
+  --border: #2a2d3e;
+  --text: #e2e8f0;
+  --text-muted: #64748b;
+  --text-read: #475569;
+  --dot-read: #334155;
+}
+
+[data-theme="light"] {
+  --bg: #f1f5f9;
+  --bg-card: #ffffff;
+  --bg-hover: #e2e8f0;
+  --border: #cbd5e1;
+  --text: #0f172a;
+  --text-muted: #64748b;
+  --text-read: #94a3b8;
+  --dot-read: #cbd5e1;
 }
 
 html { font-size: 16px; }
@@ -38,14 +76,29 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background: rgba(15, 17, 23, 0.9);
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 }
 
 .app-title { font-size: 1.1rem; font-weight: 600; }
 
-.header-actions { display: flex; gap: 0.5rem; }
+.unread-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.2em 0.45em;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: #fff;
+  vertical-align: middle;
+  margin-left: 0.25rem;
+}
+.unread-badge:empty { display: none; }
+
+.header-actions { display: flex; gap: 0.5rem; align-items: center; }
+.btn-icon { padding: 0.3rem 0.5rem; font-size: 1rem; }
 
 .refresh-timer {
   flex: 1;
@@ -331,6 +384,20 @@ label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bot
   padding: 0.2rem 0.4rem;
 }
 .modal-close:hover { color: var(--text); }
+
+/* ── feeds modal list ──────────────────────────────────────────────────────── */
+.feeds-list { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem; max-height: 60vh; overflow-y: auto; }
+
+.feed-row { padding: 0.6rem 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); transition: opacity 0.2s; }
+.feed-row--hidden { opacity: 0.45; }
+.feed-row-header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.2rem; }
+.feed-row-name { font-weight: 600; font-size: 0.9rem; }
+.feed-toggle { display: flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--text-muted); cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.feed-toggle input[type="checkbox"] { cursor: pointer; accent-color: var(--accent); }
+.feed-row-meta { display: flex; flex-direction: column; gap: 0.1rem; }
+.feed-row-url { font-size: 0.75rem; color: var(--accent-hover); word-break: break-all; text-decoration: none; }
+.feed-row-url:hover { text-decoration: underline; }
+.feed-row-stats { font-size: 0.72rem; color: var(--text-muted); }
 
 /* ── footer ────────────────────────────────────────────────────────────────── */
 .app-footer {

@@ -29,13 +29,24 @@ def is_filtered(title: str, filters: list[FilterConfig]) -> bool:
 
 
 def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfig], max_articles: int) -> None:
-    parsed = feedparser.parse(feed_config.url)
-
     combined_filters = global_filters + feed_config.filters
 
     with get_session(engine) as session:
         feed = session.query(Feed).filter(Feed.url == feed_config.url).first()
         if not feed:
+            return
+
+        parsed = feedparser.parse(feed_config.url, etag=feed.http_etag, modified=feed.http_modified)
+
+        # Store updated caching headers regardless of whether content changed
+        if getattr(parsed, "etag", None):
+            feed.http_etag = parsed.etag
+        if getattr(parsed, "modified", None):
+            feed.http_modified = parsed.modified
+
+        # 304 Not Modified — server confirmed nothing changed, skip processing
+        if getattr(parsed, "status", None) == 304:
+            feed.last_fetched_at = datetime.now(timezone.utc)
             return
 
         existing_guids = {

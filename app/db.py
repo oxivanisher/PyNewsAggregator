@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlalchemy import (
     Boolean, Column, DateTime, ForeignKey, Integer, String, Text,
-    UniqueConstraint, create_engine,
+    UniqueConstraint, create_engine, text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, relationship
 
@@ -25,6 +25,8 @@ class Feed(Base):
     check_interval = Column(Integer, nullable=False)
     read_mode = Column(String, nullable=False, default="expand")
     last_fetched_at = Column(DateTime, nullable=True)
+    http_etag = Column(String, nullable=True)
+    http_modified = Column(String, nullable=True)
 
     articles = relationship("Article", back_populates="feed", cascade="all, delete-orphan")
 
@@ -67,6 +69,27 @@ class ReadArticle(Base):
     token_obj = relationship("Token", back_populates="read_articles")
 
 
+class HiddenFeed(Base):
+    __tablename__ = "hidden_feeds"
+
+    token = Column(String, ForeignKey("tokens.token", ondelete="CASCADE"), primary_key=True)
+    feed_id = Column(Integer, ForeignKey("feeds.id", ondelete="CASCADE"), primary_key=True)
+
+
+def _migrate(engine) -> None:
+    """Add columns that didn't exist in earlier versions of the schema."""
+    migrations = [
+        ("feeds", "http_etag", "TEXT"),
+        ("feeds", "http_modified", "TEXT"),
+    ]
+    with engine.connect() as conn:
+        for table, column, definition in migrations:
+            existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            if column not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
+        conn.commit()
+
+
 def get_engine():
     db_path = os.environ.get("DB_PATH", "data/news.db")
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -75,6 +98,7 @@ def get_engine():
         connect_args={"check_same_thread": False},
     )
     Base.metadata.create_all(engine)
+    _migrate(engine)
     return engine
 
 

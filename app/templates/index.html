@@ -3,16 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PyNewsAggregator</title>
+  <title>News</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script>
+    // Apply saved theme before first paint to prevent flash
+    (function() {
+      const saved = localStorage.getItem('theme');
+      if (saved) document.documentElement.setAttribute('data-theme', saved);
+    })();
+  </script>
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
 </head>
 <body>
 
 <header class="app-header">
-  <span class="app-title">📰 News</span>
+  <span class="app-title">📰 News <span id="unread-badge" class="unread-badge"></span></span>
   <span id="refresh-timer" class="refresh-timer"></span>
   <div class="header-actions">
+    <button class="btn-ghost btn-icon" id="theme-toggle" onclick="cycleTheme()" title="Toggle light/dark mode"></button>
     <button class="btn-ghost" onclick="markAllRead()" title="Mark all as read">✓ All read</button>
     <button class="btn-ghost" onclick="openTokenModal()" title="Manage sync token">⇄ Token</button>
   </div>
@@ -29,9 +37,20 @@
 <button class="fab-next" onclick="nextUnread()" title="Next unread (n / j)">&#9733;</button>
 
 <footer class="app-footer">
+  <a href="#" onclick="openFeedsModal(); return false;">sources</a>
+  &nbsp;·&nbsp;
   <a href="https://github.com/oxivanisher/PyNewsAggregator/commit/{{ git_commit }}"
      target="_blank" rel="noopener noreferrer">{{ git_commit }}</a>
 </footer>
+
+<!-- Feeds modal -->
+<div id="feeds-modal" class="modal-backdrop hidden" onclick="closeFeedsModal(event)">
+  <div class="modal">
+    <h2>Sources</h2>
+    <div id="feeds-list" class="feeds-list"></div>
+    <button class="modal-close" onclick="closeFeedsModal()">✕</button>
+  </div>
+</div>
 
 <!-- Token modal -->
 <div id="token-modal" class="modal-backdrop hidden" onclick="closeTokenModal(event)">
@@ -65,6 +84,99 @@
 </div>
 
 <script>
+  // ── theme ──────────────────────────────────────────────────────────────────
+  function applyTheme(theme) {
+    if (theme === 'auto') {
+      document.documentElement.removeAttribute('data-theme');
+      localStorage.removeItem('theme');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('theme', theme);
+    }
+    updateThemeIcon();
+  }
+
+  function currentTheme() {
+    return document.documentElement.getAttribute('data-theme') || 'auto';
+  }
+
+  function cycleTheme() {
+    const order = ['auto', 'light', 'dark'];
+    const next = order[(order.indexOf(currentTheme()) + 1) % order.length];
+    applyTheme(next);
+  }
+
+  function updateThemeIcon() {
+    const btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+    const t = currentTheme();
+    if (t === 'light')     { btn.textContent = '☀'; btn.title = 'Light mode (click for dark)'; }
+    else if (t === 'dark') { btn.textContent = '☾'; btn.title = 'Dark mode (click for auto)'; }
+    else                   { btn.textContent = '◑'; btn.title = 'Auto mode (click for light)'; }
+  }
+
+  updateThemeIcon();
+
+  // ── feeds modal ────────────────────────────────────────────────────────────
+  function openFeedsModal() {
+    const modal = document.getElementById('feeds-modal');
+    const list  = document.getElementById('feeds-list');
+    list.innerHTML = '<p class="modal-hint">Loading…</p>';
+    modal.classList.remove('hidden');
+    fetch('/feeds').then(r => r.json()).then(feeds => {
+      if (!feeds.length) { list.innerHTML = '<p class="modal-hint">No feeds configured.</p>'; return; }
+      list.innerHTML = feeds.map(f => {
+        const interval = f.check_interval >= 3600
+          ? `${Math.round(f.check_interval / 3600)}h`
+          : `${Math.round(f.check_interval / 60)}m`;
+        const fetched = f.last_fetched_at ? timeAgoClient(f.last_fetched_at) : 'never';
+        return `<div class="feed-row${f.hidden ? ' feed-row--hidden' : ''}" id="feed-row-${f.id}">
+          <div class="feed-row-header">
+            <span class="feed-row-name">${escHtml(f.name)}</span>
+            <label class="feed-toggle" title="${f.hidden ? 'Hidden — click to show' : 'Visible — click to hide'}">
+              <input type="checkbox" ${f.hidden ? '' : 'checked'} onchange="toggleFeedHidden(${f.id}, this)">
+              <span class="feed-toggle-label">${f.hidden ? 'hidden' : 'visible'}</span>
+            </label>
+          </div>
+          <div class="feed-row-meta">
+            <a href="${escHtml(f.url)}" target="_blank" rel="noopener noreferrer" class="feed-row-url">${escHtml(f.url)}</a>
+            <span class="feed-row-stats">${f.article_count} articles &nbsp;·&nbsp; every ${interval} &nbsp;·&nbsp; fetched ${fetched}</span>
+          </div>
+        </div>`;
+      }).join('');
+    }).catch(() => { list.innerHTML = '<p class="modal-hint">Failed to load feeds.</p>'; });
+  }
+
+  async function toggleFeedHidden(feedId, checkbox) {
+    checkbox.disabled = true;
+    try {
+      const { hidden } = await fetch(`/feeds/${feedId}/toggle`, {method: 'POST'}).then(r => r.json());
+      checkbox.checked = !hidden;
+      const row = document.getElementById('feed-row-' + feedId);
+      if (row) {
+        row.classList.toggle('feed-row--hidden', hidden);
+        const lbl = row.querySelector('.feed-toggle-label');
+        if (lbl) lbl.textContent = hidden ? 'hidden' : 'visible';
+        const tog = row.querySelector('.feed-toggle');
+        if (tog) tog.title = hidden ? 'Hidden — click to show' : 'Visible — click to hide';
+      }
+      htmx.ajax('GET', '/articles', {target: '#article-list', swap: 'innerHTML'});
+      updateUnreadCount();
+    } finally {
+      checkbox.disabled = false;
+    }
+  }
+
+  function closeFeedsModal(e) {
+    if (!e || e.target.id === 'feeds-modal' || e.target.classList.contains('modal-close')) {
+      document.getElementById('feeds-modal').classList.add('hidden');
+    }
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   // ── token ──────────────────────────────────────────────────────────────────
   function openTokenModal() {
     fetch('/token/export')
@@ -93,9 +205,9 @@
   // ── mark all read ──────────────────────────────────────────────────────────
   function markAllRead() {
     fetch('/watermark', {method: 'POST', redirect: 'manual'}).then(() => {
-      // Re-render the article list
       htmx.ajax('GET', '/articles', {target: '#article-list', swap: 'innerHTML'});
       hideBanner();
+      updateUnreadCount();
     });
   }
 
@@ -122,10 +234,6 @@
 
       const list = document.getElementById('article-list');
 
-      // Anchor scroll to the first existing item so we don't jump
-      const anchor = list.querySelector('.news-item, .watermark-divider, #load-more, .end-of-feed');
-      const anchorTop = anchor ? anchor.getBoundingClientRect().top : null;
-
       list.insertAdjacentHTML('afterbegin', html);
       htmx.process(list);   // wire up hx-trigger="intersect/load" on new items
 
@@ -133,10 +241,9 @@
       const newFirst = list.querySelector('.news-item');
       if (newFirst) newestId = parseInt(newFirst.id.replace('article-', ''), 10) || newestId;
 
-      // Compensate scroll so the user's reading position doesn't jump
-      if (anchor && anchorTop !== null && window.scrollY > 0) {
-        window.scrollBy(0, anchor.getBoundingClientRect().top - anchorTop);
-      }
+      // Scroll to top so the user sees new articles arrive
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      updateUnreadCount();
     } catch (_) {}
     finally { prependPending = false; }
   }
@@ -198,10 +305,20 @@
     el.textContent = `next: ${Math.ceil(refreshCountdown / 60)}m`;
   }
 
+  async function updateUnreadCount() {
+    try {
+      const { unread } = await fetch('/unread-count').then(r => r.json());
+      document.title = unread > 0 ? `(${unread}) News` : 'News';
+      const badge = document.getElementById('unread-badge');
+      if (badge) badge.textContent = unread > 0 ? unread : '';
+    } catch (_) {}
+  }
+
   let tickCycle = 0;
   setInterval(() => {
     tickCycle++;
     updateTimestamps();
+    updateUnreadCount();
     if (refreshCountdown !== null) refreshCountdown -= 30;
     if (tickCycle % 10 === 0) fetchStatus(); // re-sync every ~5 min
     else renderTimer();
@@ -209,6 +326,7 @@
 
   fetchStatus();
   updateTimestamps();
+  updateUnreadCount();
 
   // ── article expand/collapse ────────────────────────────────────────────────
   function closeAll(exceptId) {
@@ -243,6 +361,12 @@
     }
   }
 
+  let _unreadCountTimer = null;
+  function scheduleUnreadCount() {
+    clearTimeout(_unreadCountTimer);
+    _unreadCountTimer = setTimeout(updateUnreadCount, 800);
+  }
+
   function markRead(id, itemEl) {
     if (!itemEl) itemEl = document.getElementById('article-' + id);
     if (itemEl && itemEl.classList.contains('read')) return;
@@ -252,6 +376,7 @@
       const dot = itemEl.querySelector('.dot');
       if (dot) dot.textContent = '○';
     }
+    scheduleUnreadCount();
   }
 
   // scroll/load read mode: called by htmx on intersect/load via hx-on
