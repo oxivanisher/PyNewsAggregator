@@ -17,9 +17,6 @@
   </div>
 </header>
 
-<div id="new-banner" class="new-banner hidden">
-  <button onclick="loadNewArticles()">↑ <span id="new-count"></span> new articles — click to load</button>
-</div>
 
 <main id="article-list"
       hx-get="/articles"
@@ -94,35 +91,71 @@
     });
   }
 
-  // ── SSE new articles ───────────────────────────────────────────────────────
-  let pendingNewCount = 0;
+  // ── new-article tracking ───────────────────────────────────────────────────
+  let newestId = 0;
+  let prependPending = false;
 
-  const evtSource = new EventSource('/events');
-  evtSource.onmessage = function(e) {
+  function syncNewestId() {
+    const marker = document.getElementById('newest-marker');
+    if (marker) { newestId = parseInt(marker.dataset.id, 10) || 0; return; }
+    const first = document.querySelector('#article-list .news-item');
+    if (first) newestId = parseInt(first.id.replace('article-', ''), 10) || 0;
+  }
+
+  document.addEventListener('htmx:afterSettle', syncNewestId);
+
+  async function prependNew() {
+    if (newestId === 0 || prependPending) return;
+    prependPending = true;
     try {
-      const data = JSON.parse(e.data);
-      if (data.new_articles) {
-        pendingNewCount += data.new_articles;
-        showBanner(pendingNewCount);
+      const resp = await fetch('/articles/prepend?since_id=' + newestId);
+      const html = await resp.text();
+      if (!html.trim()) return;
+
+      const list = document.getElementById('article-list');
+
+      // Anchor scroll to the first existing item so we don't jump
+      const anchor = list.querySelector('.news-item, .watermark-divider, #load-more, .end-of-feed');
+      const anchorTop = anchor ? anchor.getBoundingClientRect().top : null;
+
+      list.insertAdjacentHTML('afterbegin', html);
+      htmx.process(list);   // wire up hx-trigger="intersect/load" on new items
+
+      // Update newestId from the new first article
+      const newFirst = list.querySelector('.news-item');
+      if (newFirst) newestId = parseInt(newFirst.id.replace('article-', ''), 10) || newestId;
+
+      // Compensate scroll so the user's reading position doesn't jump
+      if (anchor && anchorTop !== null && window.scrollY > 0) {
+        window.scrollBy(0, anchor.getBoundingClientRect().top - anchorTop);
       }
     } catch (_) {}
-  };
-
-  function showBanner(count) {
-    document.getElementById('new-count').textContent = count;
-    document.getElementById('new-banner').classList.remove('hidden');
+    finally { prependPending = false; }
   }
 
-  function hideBanner() {
-    pendingNewCount = 0;
-    document.getElementById('new-banner').classList.add('hidden');
+  // ── SSE: silently prepend when server pushes new articles ─────────────────
+  let sseReady = false;
+  let prependTimer = null;
+
+  function schedulePrepend() {
+    // debounce: if multiple SSE events arrive in quick succession, batch them
+    clearTimeout(prependTimer);
+    prependTimer = setTimeout(prependNew, 400);
   }
 
-  function loadNewArticles() {
-    hideBanner();
-    htmx.ajax('GET', '/articles', {target: '#article-list', swap: 'innerHTML'});
-    window.scrollTo({top: 0, behavior: 'smooth'});
+  function connectSSE() {
+    const src = new EventSource('/events');
+    src.onopen = () => { if (sseReady) schedulePrepend(); sseReady = true; };
+    src.onmessage = (e) => {
+      try { if (JSON.parse(e.data).new_articles) schedulePrepend(); } catch (_) {}
+    };
   }
+  connectSSE();
+
+  // ── focus check: catch up when tab regains visibility ─────────────────────
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') prependNew();
+  });
 
   // ── article expand/collapse ────────────────────────────────────────────────
   function toggleArticle(id, readMode) {

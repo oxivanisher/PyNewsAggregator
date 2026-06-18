@@ -80,25 +80,6 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 }
 .btn-danger:hover { background: var(--danger); color: #fff; }
 
-/* ── new articles banner ───────────────────────────────────────────────────── */
-.new-banner {
-  position: sticky;
-  top: 53px;
-  z-index: 90;
-  display: flex;
-  justify-content: center;
-  padding: 0.5rem;
-  background: var(--accent);
-}
-
-.new-banner button {
-  background: transparent;
-  color: #fff;
-  font-weight: 600;
-  padding: 0.25rem 1rem;
-}
-
-.new-banner button:hover { opacity: 0.85; }
 
 /* ── article list ──────────────────────────────────────────────────────────── */
 #article-list {

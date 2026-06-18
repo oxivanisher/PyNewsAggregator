@@ -89,7 +89,7 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
 
         feed.last_fetched_at = datetime.now(timezone.utc)
 
-    if new_count > 0 and _event_loop:
+    if new_count > 0 and _event_loop and not _event_loop.is_closed():
         asyncio.run_coroutine_threadsafe(_broadcast(new_count), _event_loop)
 
 

@@ -7,3 +7,13 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./data:/app/data
     restart: unless-stopped
+
+  # Optional: automatically pull and restart when a new image is published.
+  # Remove this block if you prefer to trigger redeployment via the Portainer
+  # webhook (set PORTAINER_WEBHOOK_URL in your GitHub repository secrets).
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 300 --cleanup pynewsaggregator
+    restart: unless-stopped

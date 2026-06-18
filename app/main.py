@@ -155,6 +155,37 @@ async def articles(
         )
 
 
+@app.get("/articles/prepend", response_class=HTMLResponse)
+async def articles_prepend(
+    request: Request,
+    since_id: int = 0,
+    news_token: Optional[str] = Cookie(default=None),
+):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+
+        read_ids: set[int] = {
+            r.article_id
+            for r in session.query(ReadArticle).filter(ReadArticle.token == token_obj.token)
+        }
+
+        rows = (
+            session.query(Article, Feed)
+            .join(Feed)
+            .filter(Article.filtered.is_(False), Article.id > since_id)
+            .order_by(Article.published_at.desc())
+            .limit(PAGE_SIZE)
+            .all()
+        )
+
+        items = [
+            {"article": a, "feed": f, "is_read": _is_read(a, token_obj, read_ids)}
+            for a, f in rows
+        ]
+
+        return templates.TemplateResponse(request, "_articles_prepend.html", {"items": items})
+
+
 @app.post("/read/{article_id}")
 async def mark_read(article_id: int, news_token: Optional[str] = Cookie(default=None)):
     with get_session(engine) as session:
