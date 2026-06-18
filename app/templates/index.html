@@ -25,6 +25,8 @@
   <div class="loading">Loading…</div>
 </main>
 
+<button class="fab-next" onclick="nextUnread()" title="Next unread (n / j)">&#8595;</button>
+
 <footer class="app-footer">
   <a href="https://github.com/oxivanisher/PyNewsAggregator/commit/{{ git_commit }}"
      target="_blank" rel="noopener noreferrer">{{ git_commit }}</a>
@@ -210,6 +212,33 @@
   function markReadFromHtmx(id) {
     markRead(id, document.getElementById('article-' + id));
   }
+
+  // ── next unread ────────────────────────────────────────────────────────────
+  function nextUnread() {
+    const articles = Array.from(document.querySelectorAll('#article-list .news-item'));
+    if (!articles.length) return;
+
+    const expanded = document.querySelector('#article-list .news-item.expanded');
+    const startIdx = expanded ? articles.indexOf(expanded) + 1 : 0;
+
+    let target = null;
+    for (let i = startIdx; i < articles.length; i++) {
+      if (!articles[i].classList.contains('read')) { target = articles[i]; break; }
+    }
+
+    if (!target) return;  // no more unread in the loaded list
+
+    const id = parseInt(target.id.replace('article-', ''), 10);
+    const readMode = target.dataset.readMode || 'expand';
+
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    toggleArticle(id, readMode);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === 'n' || e.key === 'j') nextUnread();
+  });
 </script>
 </body>
 </html>

@@ -2,6 +2,7 @@
 <article
   class="news-item{% if is_read %} read{% endif %}"
   id="article-{{ article.id }}"
+  data-read-mode="{{ feed.read_mode }}"
   {% if not is_read %}
     {% if feed.read_mode == 'scroll' %}
       hx-post="/read/{{ article.id }}"
