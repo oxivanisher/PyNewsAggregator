@@ -100,6 +100,7 @@ async def _broadcast(count: int) -> None:
 
 
 def sync_feeds(config: AppConfig, engine) -> None:
+    configured_urls = {fc.url for fc in config.feeds}
     with get_session(engine) as session:
         for fc in config.feeds:
             interval = fc.check_interval or config.defaults.check_interval
@@ -111,6 +112,8 @@ def sync_feeds(config: AppConfig, engine) -> None:
                 feed.read_mode = mode
             else:
                 session.add(Feed(name=fc.name, url=fc.url, check_interval=interval, read_mode=mode))
+
+        session.query(Feed).filter(Feed.url.notin_(configured_urls)).delete(synchronize_session=False)
 
 
 def start_scheduler(config: AppConfig, engine) -> None:
