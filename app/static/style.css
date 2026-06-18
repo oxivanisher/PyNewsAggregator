@@ -189,10 +189,18 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 
 /* !important overrides feed-supplied inline styles on images */
 .article-content img {
-  max-width: 100% !important;
+  float: left;
+  max-width: 50% !important;
   height: auto !important;
   border-radius: 4px;
-  margin: 1.5rem !important;
+  margin: 0.25rem 1.5rem 1rem 0 !important;
+}
+
+/* clear floats so the article body doesn't collapse */
+.article-content::after {
+  content: '';
+  display: table;
+  clear: both;
 }
 .article-content p { margin-bottom: 0.75rem; }
 .article-content p:last-child { margin-bottom: 0; }
