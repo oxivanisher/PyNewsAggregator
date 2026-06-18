@@ -1,0 +1,4 @@
+{% from "_macros.html" import article_item %}
+{% for item in items %}
+{{ article_item(item.article, item.feed, item.is_read) }}
+{% endfor %}
