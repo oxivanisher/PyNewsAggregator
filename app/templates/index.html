@@ -25,7 +25,7 @@
   <div class="loading">Loading…</div>
 </main>
 
-<button class="fab-next" onclick="nextUnread()" title="Next unread (n / j)">&#8595;</button>
+<button class="fab-next" onclick="nextUnread()" title="Next unread (n / j)">&#9733;</button>
 
 <footer class="app-footer">
   <a href="https://github.com/oxivanisher/PyNewsAggregator/commit/{{ git_commit }}"
@@ -231,14 +231,26 @@
 
     const id = parseInt(target.id.replace('article-', ''), 10);
     const readMode = target.dataset.readMode || 'expand';
+    const allArticles = Array.from(document.querySelectorAll('#article-list .news-item'));
+    const targetIdx = allArticles.indexOf(target);
+    const aboveEl = targetIdx > 0 ? allArticles[targetIdx - 1] : null;
+    const headerH = document.querySelector('.app-header').offsetHeight;
 
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Expand first so the body height is included when we measure
     toggleArticle(id, readMode);
+
+    requestAnimationFrame(() => {
+      const anchor = aboveEl || target;
+      const top = anchor.getBoundingClientRect().top + window.scrollY - headerH;
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    });
   }
 
   document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.altKey || e.ctrlKey || e.metaKey) return;
-    if (e.key === 'n' || e.key === 'j') nextUnread();
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key.toLowerCase() === 'n' || e.key.toLowerCase() === 'j') nextUnread();
   });
 </script>
 </body>
