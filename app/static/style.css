@@ -102,21 +102,6 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 
 .news-item.read { opacity: 0.55; }
 
-.news-item.expanded {
-  opacity: 1;
-  border-color: var(--accent);
-}
-
-.news-item.expanded .article-header {
-  background: rgba(99, 102, 241, 0.08);
-}
-
-.news-item.expanded .feed-tag { color: var(--accent); background: rgba(99, 102, 241, 0.15); }
-.news-item.expanded .article-title { color: var(--text); font-weight: 600; }
-.news-item.expanded .article-time { color: var(--text-muted); opacity: 1; }
-.news-item.expanded .dot { color: var(--dot-unread); }
-.news-item.expanded .chevron { color: var(--accent); }
-
 .article-header {
   display: grid;
   grid-template-columns: 1.2rem auto auto 1fr 1rem;
@@ -167,6 +152,19 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 
 .news-item.read .article-title { color: var(--text-read); }
 
+/* expanded overrides — must come after all .read rules to win the cascade */
+.news-item.expanded {
+  opacity: 1;
+  border-color: var(--accent);
+}
+
+.news-item.expanded .article-header { background: rgba(99, 102, 241, 0.08); }
+.news-item.expanded .dot { color: var(--dot-unread); }
+.news-item.expanded .feed-tag { color: var(--accent); background: rgba(99, 102, 241, 0.15); }
+.news-item.expanded .article-time { color: var(--text-muted); }
+.news-item.expanded .article-title { color: var(--text); font-weight: 600; }
+.news-item.expanded .chevron { color: var(--accent); }
+
 .chevron {
   font-size: 0.6rem;
   color: var(--text-muted);
@@ -188,9 +186,17 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 }
 
 .article-content a { color: var(--accent-hover); }
-.article-content img { max-width: 100%; height: auto; border-radius: 4px; margin: 0.5rem 0; }
+.article-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  margin: 0.75rem 0;
+}
 .article-content p { margin-bottom: 0.75rem; }
 .article-content p:last-child { margin-bottom: 0; }
+.article-content figure { margin: 0.75rem 0; }
+.article-content figcaption { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
 
 .no-content { font-size: 0.85rem; color: var(--text-muted); font-style: italic; }
 
