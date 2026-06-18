@@ -203,6 +203,21 @@ async def articles_prepend(
         return templates.TemplateResponse(request, "_articles_prepend.html", {"items": items})
 
 
+@app.get("/status")
+async def status():
+    try:
+        jobs = fetcher_module._scheduler.get_jobs()
+        next_runs = [j.next_run_time for j in jobs if j.next_run_time]
+        if not next_runs:
+            return {"next_refresh_in": None}
+        soonest = min(next_runs)
+        now = datetime.now(soonest.tzinfo)
+        seconds = max(0, int((soonest - now).total_seconds()))
+        return {"next_refresh_in": seconds}
+    except Exception:
+        return {"next_refresh_in": None}
+
+
 @app.post("/read/{article_id}")
 async def mark_read(article_id: int, news_token: Optional[str] = Cookie(default=None)):
     with get_session(engine) as session:

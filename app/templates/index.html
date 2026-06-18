@@ -11,6 +11,7 @@
 
 <header class="app-header">
   <span class="app-title">📰 News</span>
+  <span id="refresh-timer" class="refresh-timer"></span>
   <div class="header-actions">
     <button class="btn-ghost" onclick="markAllRead()" title="Mark all as read">✓ All read</button>
     <button class="btn-ghost" onclick="openTokenModal()" title="Manage sync token">⇄ Token</button>
@@ -152,17 +153,62 @@
 
   function connectSSE() {
     const src = new EventSource('/events');
-    src.onopen = () => { if (sseReady) schedulePrepend(); sseReady = true; };
+    src.onopen = () => { if (sseReady) { schedulePrepend(); fetchStatus(); } sseReady = true; };
     src.onmessage = (e) => {
-      try { if (JSON.parse(e.data).new_articles) schedulePrepend(); } catch (_) {}
+      try { if (JSON.parse(e.data).new_articles) { schedulePrepend(); fetchStatus(); } } catch (_) {}
     };
   }
   connectSSE();
 
   // ── focus check: catch up when tab regains visibility ─────────────────────
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') prependNew();
+    if (document.visibilityState === 'visible') { prependNew(); fetchStatus(); }
   });
+
+  // ── timestamps + refresh countdown ────────────────────────────────────────
+  function timeAgoClient(isoStr) {
+    const s = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+    if (s < 60)    return 'just now';
+    if (s < 3600)  return `${Math.floor(s / 60)}min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  }
+
+  function updateTimestamps() {
+    document.querySelectorAll('.article-time[data-published]').forEach(el => {
+      el.textContent = timeAgoClient(el.dataset.published);
+    });
+  }
+
+  let refreshCountdown = null;
+
+  async function fetchStatus() {
+    try {
+      const d = await fetch('/status').then(r => r.json());
+      refreshCountdown = d.next_refresh_in ?? null;
+      renderTimer();
+    } catch (_) {}
+  }
+
+  function renderTimer() {
+    const el = document.getElementById('refresh-timer');
+    if (!el) return;
+    if (refreshCountdown === null) { el.textContent = ''; return; }
+    if (refreshCountdown <= 0)    { el.textContent = 'refreshing…'; return; }
+    el.textContent = `next: ${Math.ceil(refreshCountdown / 60)}m`;
+  }
+
+  let tickCycle = 0;
+  setInterval(() => {
+    tickCycle++;
+    updateTimestamps();
+    if (refreshCountdown !== null) refreshCountdown -= 30;
+    if (tickCycle % 10 === 0) fetchStatus(); // re-sync every ~5 min
+    else renderTimer();
+  }, 30000);
+
+  fetchStatus();
+  updateTimestamps();
 
   // ── article expand/collapse ────────────────────────────────────────────────
   function closeAll(exceptId) {
