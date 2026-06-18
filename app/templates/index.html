@@ -218,15 +218,16 @@
     const articles = Array.from(document.querySelectorAll('#article-list .news-item'));
     if (!articles.length) return;
 
-    const expanded = document.querySelector('#article-list .news-item.expanded');
-    const startIdx = expanded ? articles.indexOf(expanded) + 1 : 0;
-
+    // Find the bottom-most (oldest) unread article that is not currently expanded
     let target = null;
-    for (let i = startIdx; i < articles.length; i++) {
-      if (!articles[i].classList.contains('read')) { target = articles[i]; break; }
+    for (let i = articles.length - 1; i >= 0; i--) {
+      if (!articles[i].classList.contains('read') && !articles[i].classList.contains('expanded')) {
+        target = articles[i];
+        break;
+      }
     }
 
-    if (!target) return;  // no more unread in the loaded list
+    if (!target) return;
 
     const id = parseInt(target.id.replace('article-', ''), 10);
     const readMode = target.dataset.readMode || 'expand';

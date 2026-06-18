@@ -192,8 +192,7 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
   max-width: 100% !important;
   height: auto !important;
   border-radius: 4px;
-  margin: 1.5rem 1.5rem 1.5rem 0 !important; /* right-margin keeps text away from floated images */
-  vertical-align: top;
+  margin: 1.5rem !important;
 }
 .article-content p { margin-bottom: 0.75rem; }
 .article-content p:last-child { margin-bottom: 0; }
