@@ -90,7 +90,7 @@ def _ensure_token(token_val: Optional[str], session, response: Optional[Response
     session.add(token_obj)
     session.flush()
     if response:
-        response.set_cookie("news_token", new_token, max_age=60 * 60 * 24 * 3650, httponly=False, samesite="lax")
+        response.set_cookie("news_token", new_token, max_age=60 * 60 * 24 * 3650, httponly=True, samesite="lax")
     return token_obj
 
 
@@ -125,7 +125,7 @@ async def index(request: Request, news_token: Optional[str] = Cookie(default=Non
     response = templates.TemplateResponse(request, "index.html", {"git_commit": GIT_COMMIT})
     with get_session(engine) as session:
         token_obj = _ensure_token(news_token, session, response)
-        response.set_cookie("news_token", token_obj.token, max_age=60 * 60 * 24 * 3650, httponly=False, samesite="lax")
+        response.set_cookie("news_token", token_obj.token, max_age=60 * 60 * 24 * 3650, httponly=True, samesite="lax")
     return response
 
 
@@ -328,7 +328,7 @@ async def token_import(response: Response, token: str = Form(...)):
             session.add(Token(token=token))
 
     response = RedirectResponse("/", status_code=303)
-    response.set_cookie("news_token", token, max_age=60 * 60 * 24 * 3650, httponly=False, samesite="lax")
+    response.set_cookie("news_token", token, max_age=60 * 60 * 24 * 3650, httponly=True, samesite="lax")
     return response
 
 
@@ -338,7 +338,7 @@ async def token_new():
     with get_session(engine) as session:
         session.add(Token(token=new_token))
     response = RedirectResponse("/", status_code=303)
-    response.set_cookie("news_token", new_token, max_age=60 * 60 * 24 * 3650, httponly=False, samesite="lax")
+    response.set_cookie("news_token", new_token, max_age=60 * 60 * 24 * 3650, httponly=True, samesite="lax")
     return response
 
 

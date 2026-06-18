@@ -3,18 +3,88 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from typing import Optional
 
 import feedparser
+import nh3
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import AppConfig, FeedConfig, FilterConfig, FilterType
-from .db import Article, Feed, get_session
+from .db import Article, Feed, HiddenFeed, ReadArticle, get_session
 
 _sse_queues: list[asyncio.Queue] = []
 _event_loop: Optional[asyncio.AbstractEventLoop] = None
 _scheduler = BackgroundScheduler(daemon=True)
+
+FETCH_TIMEOUT = 30  # seconds per feed HTTP request
+
+# Tags and attributes allowed in sanitised feed HTML
+_ALLOWED_TAGS = {
+    "a", "b", "i", "em", "strong", "code", "pre", "blockquote",
+    "p", "br", "hr", "div", "span",
+    "ul", "ol", "li",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "img", "figure", "figcaption",
+    "table", "thead", "tbody", "tr", "th", "td",
+}
+_ALLOWED_ATTRS: dict[str, set[str]] = {
+    "a":   {"href", "title", "target"},  # "rel" managed by link_rel parameter
+    "img": {"src", "alt", "title", "width", "height", "style"},
+    "*":   {"class", "style"},
+}
+
+
+def _sanitise_html(html: Optional[str]) -> Optional[str]:
+    """Strip unsafe tags/attributes and block non-http(s) URLs in feed HTML."""
+    if not html:
+        return html
+    return nh3.clean(
+        html,
+        tags=_ALLOWED_TAGS,
+        attributes=_ALLOWED_ATTRS,
+        url_schemes={"http", "https"},
+        link_rel="noopener noreferrer",
+    )
+
+
+def _safe_url(url: Optional[str]) -> Optional[str]:
+    """Return url only if it uses http or https; reject javascript: and other schemes."""
+    if url and url.startswith(("http://", "https://")):
+        return url
+    return None
+
+
+def _fetch_parsed(url: str, etag: Optional[str], modified: Optional[str]) -> feedparser.FeedParserDict:
+    """
+    Fetch a feed URL with a hard timeout and conditional-GET headers.
+    Returns a FeedParserDict; sets result['status'] = 304 for Not Modified.
+    """
+    req = urllib.request.Request(url)
+    req.add_header("User-Agent", feedparser.USER_AGENT)
+    if etag:
+        req.add_header("If-None-Match", etag)
+    if modified:
+        req.add_header("If-Modified-Since", modified)
+
+    try:
+        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT) as resp:
+            status = resp.status
+            headers = dict(resp.headers)
+            body = resp.read()
+    except urllib.error.HTTPError as exc:
+        if exc.code == 304:
+            result = feedparser.FeedParserDict()
+            result["status"] = 304
+            result["entries"] = []
+            return result
+        raise
+
+    result = feedparser.parse(body, response_headers=headers)
+    result["status"] = status
+    return result
 
 
 def is_filtered(title: str, filters: list[FilterConfig]) -> bool:
@@ -36,16 +106,16 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
         if not feed:
             return
 
-        parsed = feedparser.parse(feed_config.url, etag=feed.http_etag, modified=feed.http_modified)
+        parsed = _fetch_parsed(feed_config.url, feed.http_etag, feed.http_modified)
 
-        # Store updated caching headers regardless of whether content changed
+        # Persist updated caching headers for the next request
         if getattr(parsed, "etag", None):
             feed.http_etag = parsed.etag
         if getattr(parsed, "modified", None):
             feed.http_modified = parsed.modified
 
-        # 304 Not Modified — server confirmed nothing changed, skip processing
-        if getattr(parsed, "status", None) == 304:
+        # 304 Not Modified — nothing to process
+        if parsed.get("status") == 304:
             feed.last_fetched_at = datetime.now(timezone.utc)
             return
 
@@ -61,7 +131,7 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
 
             content = None
             if hasattr(entry, "content") and entry.content:
-                content = entry.content[0].get("value")
+                content = _sanitise_html(entry.content[0].get("value"))
 
             published_at = datetime.now(timezone.utc)
             if entry.get("published_parsed"):
@@ -77,9 +147,9 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
                 feed_id=feed.id,
                 guid=guid,
                 title=title,
-                link=entry.get("link"),
+                link=_safe_url(entry.get("link")),
                 published_at=published_at,
-                summary=entry.get("summary"),
+                summary=_sanitise_html(entry.get("summary")),
                 content=content,
                 filtered=filtered,
             ))
@@ -87,7 +157,7 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
             if not filtered:
                 new_count += 1
 
-        # Prune oldest articles beyond max_articles
+        # Prune oldest articles; clean up dependent rows first (SQLite FK enforcement is off)
         total = session.query(Article).filter(Article.feed_id == feed.id).count()
         if total > max_articles:
             oldest_ids = [
@@ -96,7 +166,12 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
                 .order_by(Article.published_at.asc())
                 .limit(total - max_articles)
             ]
-            session.query(Article).filter(Article.id.in_(oldest_ids)).delete(synchronize_session=False)
+            session.query(ReadArticle).filter(
+                ReadArticle.article_id.in_(oldest_ids)
+            ).delete(synchronize_session=False)
+            session.query(Article).filter(
+                Article.id.in_(oldest_ids)
+            ).delete(synchronize_session=False)
 
         feed.last_fetched_at = datetime.now(timezone.utc)
 
@@ -106,7 +181,7 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
 
 async def _broadcast(count: int) -> None:
     msg = json.dumps({"new_articles": count})
-    for q in _sse_queues:
+    for q in list(_sse_queues):  # snapshot so concurrent disconnects don't corrupt iteration
         await q.put(msg)
 
 
@@ -124,7 +199,21 @@ def sync_feeds(config: AppConfig, engine) -> None:
             else:
                 session.add(Feed(name=fc.name, url=fc.url, check_interval=interval, read_mode=mode))
 
-        session.query(Feed).filter(Feed.url.notin_(configured_urls)).delete(synchronize_session=False)
+        # Delete feeds removed from config; cascade through dependent rows manually
+        # because SQLite FK enforcement is disabled and bulk delete skips ORM cascades.
+        feeds_to_delete = session.query(Feed).filter(Feed.url.notin_(configured_urls)).all()
+        for feed in feeds_to_delete:
+            article_ids = [
+                row[0] for row in session.query(Article.id).filter(Article.feed_id == feed.id)
+            ]
+            if article_ids:
+                session.query(ReadArticle).filter(
+                    ReadArticle.article_id.in_(article_ids)
+                ).delete(synchronize_session=False)
+            session.query(HiddenFeed).filter(
+                HiddenFeed.feed_id == feed.id
+            ).delete(synchronize_session=False)
+            session.delete(feed)  # ORM cascade removes articles
 
 
 def start_scheduler(config: AppConfig, engine) -> None:

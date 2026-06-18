@@ -239,6 +239,16 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
   border-top: 1px solid var(--border);
 }
 
+.article-body-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.4;
+  margin-bottom: 0.9rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
 .article-content {
   font-size: 0.9rem;
   color: var(--text);
