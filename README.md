@@ -113,5 +113,4 @@ Images are built automatically on every push to `main` and on version tags (`v*`
 
 ```
 ghcr.io/oxivanisher/pynewsaggregator:latest
-ghcr.io/oxivanisher/pynewsaggregator:1.0.0
 ```
