@@ -337,9 +337,12 @@
   async function updateUnreadCount() {
     try {
       const { unread } = await fetch('/unread-count').then(r => r.json());
-      document.title = unread > 0 ? `(${unread}) News` : 'News';
+      // If an unread article is currently open, the user is reading it — don't count it
+      const reading = document.querySelector('#article-list .news-item.expanded:not(.read)');
+      const displayed = reading ? Math.max(0, unread - 1) : unread;
+      document.title = displayed > 0 ? `(${displayed}) News` : 'News';
       const badge = document.getElementById('unread-badge');
-      if (badge) badge.textContent = unread > 0 ? unread : '';
+      if (badge) badge.textContent = displayed > 0 ? displayed : '';
     } catch (_) {}
   }
 
@@ -389,6 +392,7 @@
       body.classList.remove('hidden');
       chevron.textContent = '▼';
       item.classList.add('expanded');
+      scheduleUnreadCount(); // update tab title to reflect article being read
     }
   }
 
