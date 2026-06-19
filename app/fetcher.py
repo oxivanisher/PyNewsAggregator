@@ -15,7 +15,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from .config import AppConfig, FeedConfig, FilterConfig, FilterType
 from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, get_session
 
-_sse_queues: list[asyncio.Queue] = []
+# Each entry is (token, queue); token="" for clients without a cookie.
+_sse_queues: list[tuple[str, asyncio.Queue]] = []
 _event_loop: Optional[asyncio.AbstractEventLoop] = None
 _scheduler = BackgroundScheduler(daemon=True)
 _vapid_private_key: Optional[str] = None
@@ -219,9 +220,18 @@ def _send_push(count: int, feed_name: str) -> None:
 
 
 async def _broadcast(count: int) -> None:
+    """Broadcast new-article notification to every connected client (all tokens)."""
     msg = json.dumps({"new_articles": count})
-    for q in list(_sse_queues):  # snapshot so concurrent disconnects don't corrupt iteration
+    for _tok, q in list(_sse_queues):
         await q.put(msg)
+
+
+async def broadcast_to_token(token: str, payload: dict) -> None:
+    """Send a read-state update only to queues belonging to this token."""
+    msg = json.dumps(payload)
+    for tok, q in list(_sse_queues):
+        if tok == token:
+            await q.put(msg)
 
 
 def sync_feeds(config: AppConfig, engine) -> None:

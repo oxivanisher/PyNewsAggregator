@@ -252,10 +252,38 @@
     const src = new EventSource('/events');
     src.onopen = () => { if (sseReady) { schedulePrepend(); fetchStatus(); } sseReady = true; };
     src.onmessage = (e) => {
-      try { if (JSON.parse(e.data).new_articles) { schedulePrepend(); fetchStatus(); } } catch (_) {}
+      try {
+        const data = JSON.parse(e.data);
+        if (data.new_articles) { schedulePrepend(); fetchStatus(); }
+        if (data.read_article != null) markReadInDom(data.read_article);
+        if (data.watermark)    markWatermarkInDom(data.watermark);
+      } catch (_) {}
     };
   }
   connectSSE();
+
+  function markReadInDom(id) {
+    const item = document.getElementById('article-' + id);
+    if (!item || item.classList.contains('read')) return;
+    item.classList.add('read');
+    const dot = item.querySelector('.dot');
+    if (dot) dot.textContent = '○';
+    scheduleUnreadCount();
+  }
+
+  function markWatermarkInDom(isoTs) {
+    const wm = new Date(isoTs).getTime();
+    document.querySelectorAll('#article-list .news-item:not(.read)').forEach(item => {
+      const timeEl = item.querySelector('.article-time[data-published]');
+      if (!timeEl) return;
+      if (new Date(timeEl.dataset.published).getTime() <= wm) {
+        item.classList.add('read');
+        const dot = item.querySelector('.dot');
+        if (dot) dot.textContent = '○';
+      }
+    });
+    scheduleUnreadCount();
+  }
 
   // ── focus check: catch up when tab regains visibility ─────────────────────
   document.addEventListener('visibilitychange', () => {

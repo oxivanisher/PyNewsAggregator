@@ -22,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 
 from .config import load_config
 from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_engine, get_session
-from .fetcher import _sse_queues, start_scheduler, stop_scheduler
+from .fetcher import _sse_queues, broadcast_to_token, start_scheduler, stop_scheduler
 import app.fetcher as fetcher_module
 
 PAGE_SIZE = 20
@@ -336,19 +336,27 @@ async def status():
 
 @app.post("/read/{article_id}")
 async def mark_read(article_id: int, news_token: Optional[str] = Cookie(default=None)):
+    token_str: str = ""
     with get_session(engine) as session:
         token_obj = _ensure_token(news_token, session)
-        existing = session.get(ReadArticle, (token_obj.token, article_id))
+        token_str = token_obj.token
+        existing = session.get(ReadArticle, (token_str, article_id))
         if not existing:
-            session.add(ReadArticle(token=token_obj.token, article_id=article_id))
+            session.add(ReadArticle(token=token_str, article_id=article_id))
+    await broadcast_to_token(token_str, {"read_article": article_id})
     return Response(status_code=204)
 
 
 @app.post("/watermark")
 async def set_watermark(news_token: Optional[str] = Cookie(default=None)):
+    token_str: str = ""
+    watermark_ts: datetime
     with get_session(engine) as session:
         token_obj = _ensure_token(news_token, session)
-        token_obj.watermark_at = datetime.now(timezone.utc)
+        token_str = token_obj.token
+        watermark_ts = datetime.now(timezone.utc)
+        token_obj.watermark_at = watermark_ts
+    await broadcast_to_token(token_str, {"watermark": watermark_ts.isoformat()})
     return RedirectResponse("/", status_code=303)
 
 
@@ -429,10 +437,13 @@ async def push_unsubscribe(request: Request):
 
 
 @app.get("/events")
-async def sse_events():
+async def sse_events(news_token: Optional[str] = Cookie(default=None)):
+    token_str = news_token or ""
+
     async def generator():
         q: asyncio.Queue = asyncio.Queue()
-        _sse_queues.append(q)
+        entry = (token_str, q)
+        _sse_queues.append(entry)
         try:
             yield "data: {}\n\n"
             while True:
@@ -442,7 +453,7 @@ async def sse_events():
                 except asyncio.TimeoutError:
                     yield ": heartbeat\n\n"
         finally:
-            if q in _sse_queues:
-                _sse_queues.remove(q)
+            if entry in _sse_queues:
+                _sse_queues.remove(entry)
 
     return StreamingResponse(generator(), media_type="text/event-stream")
