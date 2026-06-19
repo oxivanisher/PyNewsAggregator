@@ -402,15 +402,17 @@
     _unreadCountTimer = setTimeout(updateUnreadCount, 800);
   }
 
-  function markRead(id, itemEl) {
+  async function markRead(id, itemEl) {
     if (!itemEl) itemEl = document.getElementById('article-' + id);
-    if (itemEl && itemEl.classList.contains('read')) return;
-    fetch('/read/' + id, {method: 'POST'});
+    if (itemEl?.classList.contains('read')) return;
     if (itemEl) {
       itemEl.classList.add('read');
       const dot = itemEl.querySelector('.dot');
       if (dot) dot.textContent = '○';
     }
+    // Wait for the server to confirm before refreshing the count —
+    // otherwise the count fetch races the POST and may read stale data.
+    try { await fetch('/read/' + id, { method: 'POST' }); } catch (_) {}
     scheduleUnreadCount();
   }
 
