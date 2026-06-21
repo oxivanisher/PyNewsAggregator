@@ -256,6 +256,27 @@ async def articles_prepend(
         return templates.TemplateResponse(request, "_articles_prepend.html", {"items": items})
 
 
+@app.get("/next-unread")
+async def next_unread_article(news_token: Optional[str] = Cookie(default=None)):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        read_ids_subq = (
+            session.query(ReadArticle.article_id)
+            .filter(ReadArticle.token == token_obj.token)
+            .scalar_subquery()
+        )
+        hidden_subq = _hidden_feed_subq(token_obj.token, session)
+        query = session.query(Article).filter(
+            Article.filtered.is_(False),
+            ~Article.id.in_(read_ids_subq),
+            ~Article.feed_id.in_(hidden_subq),
+        )
+        if token_obj.watermark_at:
+            query = query.filter(Article.published_at > token_obj.watermark_at)
+        article = query.order_by(Article.published_at.asc()).first()
+        return {"id": article.id if article else None}
+
+
 @app.get("/read-state")
 async def read_state(ids: str = "", news_token: Optional[str] = Cookie(default=None)):
     with get_session(engine) as session:

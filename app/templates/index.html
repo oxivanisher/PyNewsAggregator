@@ -436,28 +436,24 @@
   }
 
   // ── next unread ────────────────────────────────────────────────────────────
-  async function nextUnread() {
-    await syncReadState();
-    const all = Array.from(document.querySelectorAll('#article-list .news-item'));
-    // Oldest unread that isn't already open (expanded articles are "in progress")
-    let target = null;
+  function _findOldestUnread() {
+    const all = document.querySelectorAll('#article-list .news-item');
     for (let i = all.length - 1; i >= 0; i--) {
       if (!all[i].classList.contains('read') && !all[i].classList.contains('expanded')) {
-        target = all[i];
-        break;
+        return all[i];
       }
     }
-    if (!target) return;
+    return null;
+  }
 
+  function _openAndScrollTo(target) {
+    const all = Array.from(document.querySelectorAll('#article-list .news-item'));
     const id = parseInt(target.id.replace('article-', ''), 10);
     const readMode = target.dataset.readMode || 'expand';
     const idx = all.indexOf(target);
     const aboveEl = idx > 0 ? all[idx - 1] : null;
     const headerH = (document.querySelector('.app-header')?.offsetHeight) || 56;
-
-    // toggleArticle closes all others (marking them read) and expands the target
     toggleArticle(id, readMode);
-
     // Double rAF: first frame kicks off the reflow from closeAll + expand,
     // second frame measures stable post-reflow geometry before scrolling.
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -465,6 +461,34 @@
       const top = anchor.getBoundingClientRect().top + window.scrollY - headerH;
       window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     }));
+  }
+
+  async function _loadPagesUntil(articleId) {
+    for (let i = 0; i < 20; i++) {
+      if (document.getElementById('article-' + articleId)) return;
+      const loadMore = document.getElementById('load-more');
+      if (!loadMore) return;
+      const url = loadMore.getAttribute('hx-get');
+      if (!url) return;
+      const html = await fetch(url).then(r => r.text());
+      loadMore.outerHTML = html;
+      htmx.process(document.getElementById('article-list'));
+    }
+  }
+
+  async function nextUnread() {
+    await syncReadState();
+    const target = _findOldestUnread();
+    if (target) { _openAndScrollTo(target); return; }
+
+    // Nothing unread in the current DOM — ask the server if anything exists below the fold
+    try {
+      const { id } = await fetch('/next-unread').then(r => r.json());
+      if (!id) return;
+      await _loadPagesUntil(id);
+      const el = document.getElementById('article-' + id);
+      if (el && !el.classList.contains('expanded')) _openAndScrollTo(el);
+    } catch (_) {}
   }
 
   document.addEventListener('keydown', (e) => {
