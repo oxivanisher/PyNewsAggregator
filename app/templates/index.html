@@ -308,8 +308,12 @@
   }
 
   // ── focus check: catch up when tab/app regains visibility ────────────────
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { prependNew(); fetchStatus(); syncReadState(); }
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    await prependNew();
+    fetchStatus();
+    if (!document.querySelector('#article-list .news-item.expanded')) nextUnread();
+    else syncReadState();
   });
   // pageshow fires on bfcache restores (iOS PWA freezes/thaws pages instead of
   // hiding them, so visibilitychange is often skipped — pageshow is more reliable)
