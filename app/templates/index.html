@@ -308,12 +308,23 @@
   }
 
   // ── focus check: catch up when tab/app regains visibility ────────────────
+  async function _syncAndJump() {
+    // An article the user is actively reading — check if it was read elsewhere
+    const expandedUnread = document.querySelector('#article-list .news-item.expanded:not(.read)');
+    if (!expandedUnread) {
+      nextUnread();  // nothing open (or already read): nextUnread handles sync internally
+    } else {
+      await syncReadState();
+      // If another device read this article while we were away, advance past it
+      if (expandedUnread.classList.contains('read')) nextUnread();
+    }
+  }
+
   document.addEventListener('visibilitychange', async () => {
     if (document.visibilityState !== 'visible') return;
     await prependNew();
     fetchStatus();
-    if (!document.querySelector('#article-list .news-item.expanded')) nextUnread();
-    else syncReadState();
+    _syncAndJump();
   });
   // pageshow fires on bfcache restores (iOS PWA freezes/thaws pages instead of
   // hiding them, so visibilitychange is often skipped — pageshow is more reliable)
@@ -321,9 +332,7 @@
     if (!e.persisted) return;
     await prependNew();
     fetchStatus();
-    // nextUnread() calls syncReadState() internally before jumping
-    if (!document.querySelector('#article-list .news-item.expanded')) nextUnread();
-    else syncReadState();
+    _syncAndJump();
   });
 
   // ── timestamps + refresh countdown ────────────────────────────────────────
