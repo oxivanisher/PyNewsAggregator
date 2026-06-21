@@ -183,7 +183,8 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
         if _event_loop and not _event_loop.is_closed():
             asyncio.run_coroutine_threadsafe(_broadcast(new_count), _event_loop)
         if _vapid_private_key and _push_engine:
-            _send_push()
+            import threading
+            threading.Thread(target=_send_push, daemon=True).start()
 
 
 def _unread_for_token(token: str, session) -> int:

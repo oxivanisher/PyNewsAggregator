@@ -507,19 +507,26 @@
     }
   }
 
+  let _nextUnreadPending = false;
   async function nextUnread() {
-    await syncReadState();
-    const target = _findOldestUnread();
-    if (target) { _openAndScrollTo(target); return; }
-
-    // Nothing unread in the current DOM — ask the server if anything exists below the fold
+    if (_nextUnreadPending) return;
+    _nextUnreadPending = true;
     try {
-      const { id } = await fetch('/next-unread').then(r => r.json());
-      if (!id) return;
-      await _loadPagesUntil(id);
-      const el = document.getElementById('article-' + id);
-      if (el && !el.classList.contains('expanded')) _openAndScrollTo(el);
-    } catch (_) {}
+      await syncReadState();
+      const target = _findOldestUnread();
+      if (target) { _openAndScrollTo(target); return; }
+
+      // Nothing unread in the current DOM — ask the server if anything exists below the fold
+      try {
+        const { id } = await fetch('/next-unread').then(r => r.json());
+        if (!id) return;
+        await _loadPagesUntil(id);
+        const el = document.getElementById('article-' + id);
+        if (el && !el.classList.contains('expanded')) _openAndScrollTo(el);
+      } catch (_) {}
+    } finally {
+      _nextUnreadPending = false;
+    }
   }
 
   document.addEventListener('keydown', (e) => {
