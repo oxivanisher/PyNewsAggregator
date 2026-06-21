@@ -264,7 +264,8 @@
 
   function markReadInDom(id) {
     const item = document.getElementById('article-' + id);
-    if (!item || item.classList.contains('read')) return;
+    if (!item) { scheduleUnreadCount(); return; }  // not in DOM yet, but server count changed
+    if (item.classList.contains('read')) return;
     item.classList.add('read');
     const dot = item.querySelector('.dot');
     if (dot) dot.textContent = '○';
@@ -294,6 +295,7 @@
       const { read_ids, watermark } = await fetch('/read-state' + qs).then(r => r.json());
       read_ids.forEach(id => markReadInDom(id));
       if (watermark) markWatermarkInDom(watermark);
+      scheduleUnreadCount();
     } catch (_) {}
   }
 
