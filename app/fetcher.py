@@ -13,7 +13,7 @@ import nh3
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import AppConfig, FeedConfig, FilterConfig, FilterType
-from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, get_session
+from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_session
 
 # Each entry is (token, queue); token="" for clients without a cookie.
 _sse_queues: list[tuple[str, asyncio.Queue]] = []
@@ -183,22 +183,49 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
         if _event_loop and not _event_loop.is_closed():
             asyncio.run_coroutine_threadsafe(_broadcast(new_count), _event_loop)
         if _vapid_private_key and _push_engine:
-            _send_push(new_count, feed_config.name)
+            _send_push()
 
 
-def _send_push(count: int, feed_name: str) -> None:
+def _unread_for_token(token: str, session) -> int:
+    token_obj = session.get(Token, token)
+    if not token_obj:
+        return 0
+    read_ids_subq = (
+        session.query(ReadArticle.article_id)
+        .filter(ReadArticle.token == token)
+        .scalar_subquery()
+    )
+    hidden_subq = (
+        session.query(HiddenFeed.feed_id)
+        .filter(HiddenFeed.token == token)
+        .scalar_subquery()
+    )
+    query = session.query(Article).filter(
+        Article.filtered.is_(False),
+        ~Article.id.in_(read_ids_subq),
+        ~Article.feed_id.in_(hidden_subq),
+    )
+    if token_obj.watermark_at:
+        query = query.filter(Article.published_at > token_obj.watermark_at)
+    return query.count()
+
+
+def _send_push() -> None:
     try:
         from pywebpush import WebPushException, webpush
     except ImportError:
         return
 
-    body = f"{count} new article{'s' if count > 1 else ''} from {feed_name}"
-    payload = json.dumps({"title": "📰 News", "body": body})
-
     with get_session(_push_engine) as session:
         subs = session.query(PushSubscription).all()
         to_delete = []
         for sub in subs:
+            unread = _unread_for_token(sub.token, session) if sub.token else 0
+            if unread == 0:
+                continue
+
+            body = f"{unread} unread article{'s' if unread > 1 else ''}"
+            payload = json.dumps({"title": "📰 News", "body": body})
             try:
                 webpush(
                     subscription_info={

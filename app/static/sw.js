@@ -8,8 +8,7 @@ self.addEventListener('push', event => {
             body: data.body || 'New articles are available.',
             icon: '/static/icon.svg',
             badge: '/static/icon.svg',
-            tag: 'new-articles',
-            renotify: true,
+            tag: 'new-articles',  // replaces any existing notification silently
             data: { url: '/' },
         })
     );
