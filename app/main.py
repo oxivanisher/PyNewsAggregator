@@ -256,6 +256,27 @@ async def articles_prepend(
         return templates.TemplateResponse(request, "_articles_prepend.html", {"items": items})
 
 
+@app.get("/read-state")
+async def read_state(ids: str = "", news_token: Optional[str] = Cookie(default=None)):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        watermark = token_obj.watermark_at.isoformat() + "Z" if token_obj.watermark_at else None
+
+        id_list = [int(p) for p in ids.split(",") if p.strip().lstrip("-").isdigit()]
+        if id_list:
+            read_ids = [
+                r.article_id for r in
+                session.query(ReadArticle).filter(
+                    ReadArticle.token == token_obj.token,
+                    ReadArticle.article_id.in_(id_list),
+                )
+            ]
+        else:
+            read_ids = []
+
+        return {"read_ids": read_ids, "watermark": watermark}
+
+
 @app.get("/unread-count")
 async def unread_count(news_token: Optional[str] = Cookie(default=None)):
     with get_session(engine) as session:

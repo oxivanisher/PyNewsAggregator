@@ -250,7 +250,7 @@
 
   function connectSSE() {
     const src = new EventSource('/events');
-    src.onopen = () => { if (sseReady) { schedulePrepend(); fetchStatus(); } sseReady = true; };
+    src.onopen = () => { if (sseReady) { schedulePrepend(); fetchStatus(); syncReadState(); } sseReady = true; };
     src.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
@@ -285,9 +285,21 @@
     scheduleUnreadCount();
   }
 
+  // ── cross-device read-state sync ───────────────────────────────────────────
+  async function syncReadState() {
+    const unreadEls = document.querySelectorAll('#article-list .news-item:not(.read)');
+    const ids = Array.from(unreadEls).map(el => el.id.replace('article-', '')).filter(Boolean);
+    try {
+      const qs = ids.length ? '?ids=' + ids.join(',') : '';
+      const { read_ids, watermark } = await fetch('/read-state' + qs).then(r => r.json());
+      read_ids.forEach(id => markReadInDom(id));
+      if (watermark) markWatermarkInDom(watermark);
+    } catch (_) {}
+  }
+
   // ── focus check: catch up when tab regains visibility ─────────────────────
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') { prependNew(); fetchStatus(); }
+    if (document.visibilityState === 'visible') { prependNew(); fetchStatus(); syncReadState(); }
   });
 
   // ── timestamps + refresh countdown ────────────────────────────────────────
@@ -422,7 +434,8 @@
   }
 
   // ── next unread ────────────────────────────────────────────────────────────
-  function nextUnread() {
+  async function nextUnread() {
+    await syncReadState();
     const all = Array.from(document.querySelectorAll('#article-list .news-item'));
     // Oldest unread that isn't already open (expanded articles are "in progress")
     let target = null;
