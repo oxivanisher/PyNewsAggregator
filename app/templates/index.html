@@ -299,9 +299,14 @@
     } catch (_) {}
   }
 
-  // ── focus check: catch up when tab regains visibility ─────────────────────
+  // ── focus check: catch up when tab/app regains visibility ────────────────
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') { prependNew(); fetchStatus(); syncReadState(); }
+  });
+  // pageshow fires on bfcache restores (iOS PWA freezes/thaws pages instead of
+  // hiding them, so visibilitychange is often skipped — pageshow is more reliable)
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) { prependNew(); fetchStatus(); syncReadState(); }
   });
 
   // ── timestamps + refresh countdown ────────────────────────────────────────
