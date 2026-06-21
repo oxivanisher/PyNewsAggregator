@@ -214,6 +214,14 @@
 
   document.addEventListener('htmx:afterSettle', syncNewestId);
 
+  // Auto-jump to oldest unread once the article list first loads
+  let _autoJumpDone = false;
+  document.addEventListener('htmx:afterSettle', (e) => {
+    if (_autoJumpDone || e.target.id !== 'article-list') return;
+    _autoJumpDone = true;
+    nextUnread();
+  });
+
   async function prependNew() {
     if (newestId === 0 || prependPending) return;
     prependPending = true;
@@ -305,8 +313,13 @@
   });
   // pageshow fires on bfcache restores (iOS PWA freezes/thaws pages instead of
   // hiding them, so visibilitychange is often skipped — pageshow is more reliable)
-  window.addEventListener('pageshow', (e) => {
-    if (e.persisted) { prependNew(); fetchStatus(); syncReadState(); }
+  window.addEventListener('pageshow', async (e) => {
+    if (!e.persisted) return;
+    await prependNew();
+    fetchStatus();
+    // nextUnread() calls syncReadState() internally before jumping
+    if (!document.querySelector('#article-list .news-item.expanded')) nextUnread();
+    else syncReadState();
   });
 
   // ── timestamps + refresh countdown ────────────────────────────────────────
