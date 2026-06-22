@@ -204,12 +204,20 @@
   // ── new-article tracking ───────────────────────────────────────────────────
   let newestId = 0;
   let prependPending = false;
+  let lastWatermark = null;
+
+  function getItemTime(item) {
+    return new Date(item.querySelector('.article-time[data-published]')?.dataset.published || 0).getTime();
+  }
+  function getItemId(item) {
+    return parseInt(item.id.replace('article-', ''), 10) || 0;
+  }
 
   function syncNewestId() {
-    const marker = document.getElementById('newest-marker');
-    if (marker) { newestId = parseInt(marker.dataset.id, 10) || 0; return; }
-    const first = document.querySelector('#article-list .news-item');
-    if (first) newestId = parseInt(first.id.replace('article-', ''), 10) || 0;
+    const items = document.querySelectorAll('#article-list .news-item');
+    if (!items.length) return;
+    const maxId = Math.max(...Array.from(items).map(getItemId));
+    if (maxId > 0) newestId = maxId;
   }
 
   document.addEventListener('htmx:afterSettle', syncNewestId);
@@ -231,16 +239,52 @@
       if (!html.trim()) return;
 
       const list = document.getElementById('article-list');
+      const temp = document.createElement('div');
+      temp.innerHTML = html;
+      const newItems = Array.from(temp.querySelectorAll('.news-item'));
+      if (!newItems.length) return;
 
-      list.insertAdjacentHTML('afterbegin', html);
-      htmx.process(list);   // wire up hx-trigger="intersect/load" on new items
+      // Skip articles already present in the DOM
+      const toInsert = newItems.filter(item => !document.getElementById(item.id));
+      if (!toInsert.length) return;
 
-      // Update newestId from the new first article
-      const newFirst = list.querySelector('.news-item');
-      if (newFirst) newestId = parseInt(newFirst.id.replace('article-', ''), 10) || newestId;
+      const firstExisting = list.querySelector('.news-item');
+      let insertedAtTop = false;
 
-      // Scroll to top so the user sees new articles arrive
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      for (const newItem of toInsert) {
+        const newTime = getItemTime(newItem);
+        const newId   = getItemId(newItem);
+
+        // Find the correct insertion point to maintain published_at DESC, id DESC order
+        let insertBefore = null;
+        for (const existing of list.querySelectorAll('.news-item')) {
+          const et = getItemTime(existing), eid = getItemId(existing);
+          if (newTime > et || (newTime === et && newId > eid)) {
+            insertBefore = existing;
+            break;
+          }
+        }
+
+        if (insertBefore) {
+          list.insertBefore(newItem, insertBefore);
+          if (insertBefore === firstExisting) insertedAtTop = true;
+        } else {
+          const anchor = document.getElementById('load-more') || list.querySelector('.end-of-feed');
+          list.insertBefore(newItem, anchor || null);
+        }
+      }
+
+      htmx.process(list);
+
+      // newestId = max DB id seen across the whole DOM
+      const allIds = Array.from(list.querySelectorAll('.news-item')).map(getItemId);
+      if (allIds.length) newestId = Math.max(...allIds, newestId);
+
+      if (insertedAtTop) window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Apply watermark read-state + reposition divider for any newly inserted items
+      if (lastWatermark) markWatermarkInDom(lastWatermark);
+
       updateUnreadCount();
     } catch (_) {}
     finally { prependPending = false; }
@@ -281,6 +325,7 @@
   }
 
   function markWatermarkInDom(isoTs) {
+    lastWatermark = isoTs;
     const wm = new Date(isoTs).getTime();
     document.querySelectorAll('#article-list .news-item:not(.read)').forEach(item => {
       const timeEl = item.querySelector('.article-time[data-published]');
@@ -291,7 +336,38 @@
         if (dot) dot.textContent = '○';
       }
     });
+    updateWatermarkDivider();
     scheduleUnreadCount();
+  }
+
+  function updateWatermarkDivider() {
+    if (!lastWatermark) return;
+    const wm = new Date(lastWatermark).getTime();
+    const list = document.getElementById('article-list');
+    if (!list) return;
+
+    // Find the first article whose published_at is at or before the watermark
+    let insertBefore = null;
+    for (const item of list.querySelectorAll('.news-item')) {
+      const timeEl = item.querySelector('.article-time[data-published]');
+      if (!timeEl) continue;
+      if (new Date(timeEl.dataset.published).getTime() <= wm) {
+        insertBefore = item;
+        break;
+      }
+    }
+
+    let divider = list.querySelector('.watermark-divider');
+    if (insertBefore) {
+      if (!divider) {
+        divider = document.createElement('div');
+        divider.className = 'watermark-divider';
+        divider.innerHTML = '<span>— you were here —</span>';
+      }
+      if (divider.nextElementSibling !== insertBefore) list.insertBefore(divider, insertBefore);
+    } else if (divider) {
+      divider.remove();
+    }
   }
 
   // ── cross-device read-state sync ───────────────────────────────────────────

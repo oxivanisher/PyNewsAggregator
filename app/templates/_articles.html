@@ -1,9 +1,5 @@
 {% from "_macros.html" import article_item %}
 
-{% if items and next_offset <= (items | length) %}
-<span id="newest-marker" data-id="{{ items[0].article.id }}" style="display:none"></span>
-{% endif %}
-
 {% for idx in range(items | length) %}
 {% set item = items[idx] %}
 
