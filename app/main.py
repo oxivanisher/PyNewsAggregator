@@ -192,7 +192,7 @@ async def articles(
             session.query(Article, Feed)
             .join(Feed)
             .filter(Article.filtered.is_(False), ~Article.feed_id.in_(hidden_subq))
-            .order_by(Article.published_at.desc())
+            .order_by(Article.published_at.desc(), Article.id.desc())
             .offset(offset)
             .limit(PAGE_SIZE + 1)
             .all()
@@ -243,7 +243,7 @@ async def articles_prepend(
             session.query(Article, Feed)
             .join(Feed)
             .filter(Article.filtered.is_(False), Article.id > since_id, ~Article.feed_id.in_(hidden_subq))
-            .order_by(Article.published_at.desc())
+            .order_by(Article.published_at.desc(), Article.id.desc())
             .limit(PAGE_SIZE)
             .all()
         )
@@ -273,7 +273,7 @@ async def next_unread_article(news_token: Optional[str] = Cookie(default=None)):
         )
         if token_obj.watermark_at:
             query = query.filter(Article.published_at > token_obj.watermark_at)
-        article = query.order_by(Article.published_at.asc()).first()
+        article = query.order_by(Article.published_at.asc(), Article.id.asc()).first()
         return {"id": article.id if article else None}
 
 
