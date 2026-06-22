@@ -167,7 +167,7 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
             oldest_ids = [
                 row[0] for row in session.query(Article.id)
                 .filter(Article.feed_id == feed.id)
-                .order_by(Article.published_at.asc())
+                .order_by(Article.published_at.asc(), Article.id.asc())
                 .limit(total - max_articles)
             ]
             session.query(ReadArticle).filter(
