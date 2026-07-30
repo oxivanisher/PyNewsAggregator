@@ -13,7 +13,7 @@ import nh3
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from .config import AppConfig, FeedConfig, FilterConfig, FilterType
-from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_session
+from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_session, reclaim_space
 
 # Each entry is (token, queue); token="" for clients without a cookie.
 _sse_queues: list[tuple[str, asyncio.Queue]] = []
@@ -165,7 +165,8 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
         # Prune oldest articles across all feeds; clean up dependent rows first
         # (SQLite FK enforcement is off)
         total = session.query(Article).count()
-        if total > max_articles:
+        pruned = total > max_articles
+        if pruned:
             oldest_ids = [
                 row[0] for row in session.query(Article.id)
                 .order_by(Article.published_at.asc(), Article.id.asc())
@@ -179,6 +180,11 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
             ).delete(synchronize_session=False)
 
         feed.last_fetched_at = datetime.now(timezone.utc)
+
+    # Deleted rows only free pages inside the file; reclaim them so the
+    # database file actually shrinks (needs auto_vacuum=INCREMENTAL, set in db.py).
+    if pruned:
+        reclaim_space(engine)
 
     if new_count > 0:
         if _event_loop and not _event_loop.is_closed():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -99,6 +100,30 @@ def _migrate(engine) -> None:
             if column not in existing:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}"))
         conn.commit()
+
+    # SQLite keeps deleted rows' pages in an internal freelist rather than
+    # shrinking the file. auto_vacuum=INCREMENTAL lets pruning (see fetcher.py)
+    # reclaim that space via `PRAGMA incremental_vacuum` instead of the file
+    # only ever growing. Changing this pragma only takes effect immediately
+    # after a VACUUM, so it's a one-time conversion (harmless on a fresh db).
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        if conn.execute(text("PRAGMA auto_vacuum")).scalar() != 2:
+            conn.execute(text("PRAGMA auto_vacuum = INCREMENTAL"))
+            conn.execute(text("VACUUM"))
+
+
+def reclaim_space(engine) -> None:
+    # incremental_vacuum reclaims one page per result row produced, so the
+    # statement must be fully drained — calling execute() alone frees only a
+    # single page and silently leaves the rest of the freelist in place.
+    # A standalone connection (isolation_level=None, i.e. autocommit) is used
+    # instead of the engine's pool: mutating a pooled connection's isolation
+    # level would leak into whatever ORM session checks it out next.
+    conn = sqlite3.connect(engine.url.database, isolation_level=None)
+    try:
+        conn.execute("PRAGMA incremental_vacuum").fetchall()
+    finally:
+        conn.close()
 
 
 def get_engine():
