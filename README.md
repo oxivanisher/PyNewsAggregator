@@ -36,8 +36,8 @@ All settings live in `config.yaml` (mounted into the container as read-only). Se
 | Key | Description |
 |-----|-------------|
 | `defaults.check_interval` | Feed poll interval in seconds (default: `3600`) |
-| `defaults.max_articles` | Articles retained per feed before oldest are pruned (default: `500`) |
 | `defaults.read_mode` | How articles are marked read: `expand`, `scroll`, or `load` (default: `expand`) |
+| `max_articles` | Total articles retained across all feeds before the oldest are pruned (default: `2000`) |
 | `filters` | List of global headline filters (applied to all feeds) |
 | `feeds` | List of feed sources |
 
@@ -56,7 +56,6 @@ feeds:
   - name: My Feed
     url: https://example.com/feed.xml
     check_interval: 1800   # optional override
-    max_articles: 200       # optional override
     read_mode: scroll       # optional override
     filters:               # optional extra filters for this feed only
       - type: substring

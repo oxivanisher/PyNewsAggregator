@@ -103,6 +103,7 @@ def is_filtered(title: str, filters: list[FilterConfig]) -> bool:
 
 
 def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfig], max_articles: int) -> None:
+    """max_articles is a global cap enforced across all feeds combined, not per feed."""
     combined_filters = global_filters + feed_config.filters
 
     with get_session(engine) as session:
@@ -161,12 +162,12 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
             if not filtered:
                 new_count += 1
 
-        # Prune oldest articles; clean up dependent rows first (SQLite FK enforcement is off)
-        total = session.query(Article).filter(Article.feed_id == feed.id).count()
+        # Prune oldest articles across all feeds; clean up dependent rows first
+        # (SQLite FK enforcement is off)
+        total = session.query(Article).count()
         if total > max_articles:
             oldest_ids = [
                 row[0] for row in session.query(Article.id)
-                .filter(Article.feed_id == feed.id)
                 .order_by(Article.published_at.asc(), Article.id.asc())
                 .limit(total - max_articles)
             ]
@@ -298,12 +299,11 @@ def start_scheduler(config: AppConfig, engine) -> None:
 
     for fc in config.feeds:
         interval = fc.check_interval or config.defaults.check_interval
-        max_art = fc.max_articles or config.defaults.max_articles
         _scheduler.add_job(
             fetch_feed,
             "interval",
             seconds=interval,
-            args=[fc, engine, config.filters, max_art],
+            args=[fc, engine, config.filters, config.max_articles],
             id=f"feed_{fc.url}",
             replace_existing=True,
             next_run_time=datetime.now(),

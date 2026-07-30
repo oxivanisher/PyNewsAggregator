@@ -239,11 +239,15 @@ async def articles_prepend(
         }
 
         hidden_subq = _hidden_feed_subq(token_obj.token, session)
+        # Ordered oldest-unseen-first (by id, not published_at) so that when the
+        # backlog exceeds PAGE_SIZE, the client's cursor (max id fetched) always
+        # advances through *every* row in order — nothing is permanently skipped
+        # just because it has an older published_at than other pending rows.
         rows = (
             session.query(Article, Feed)
             .join(Feed)
             .filter(Article.filtered.is_(False), Article.id > since_id, ~Article.feed_id.in_(hidden_subq))
-            .order_by(Article.published_at.desc(), Article.id.desc())
+            .order_by(Article.id.asc())
             .limit(PAGE_SIZE)
             .all()
         )
@@ -253,7 +257,9 @@ async def articles_prepend(
             for a, f in rows
         ]
 
-        return templates.TemplateResponse(request, "_articles_prepend.html", {"items": items})
+        response = templates.TemplateResponse(request, "_articles_prepend.html", {"items": items})
+        response.headers["X-More-Pending"] = "1" if len(rows) == PAGE_SIZE else "0"
+        return response
 
 
 @app.get("/next-unread")

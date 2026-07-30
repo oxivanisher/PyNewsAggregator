@@ -1,13 +1,14 @@
 defaults:
   # How often to check feeds, in seconds (default: 3600 = 1 hour)
   check_interval: 3600
-  # Maximum articles to keep per feed before oldest are pruned
-  max_articles: 500
   # How articles are marked as read: expand | scroll | load
   #   expand - only when you click to open the article
   #   scroll - automatically when the article scrolls into view
   #   load   - automatically when the article first appears in the timeline
   read_mode: expand
+
+# Maximum articles to keep in total across all feeds before oldest are pruned
+max_articles: 500
 
 # Global filters applied to all feeds (hide matching headlines)
 filters:

@@ -231,55 +231,98 @@
     nextUnread();
   });
 
+  // Splicing new articles into the DOM leaves the pagination cursor baked into
+  // #load-more (or the .end-of-feed marker) stale — it was computed from a row
+  // count that didn't include what we just inserted. Re-derive it from the
+  // current DOM so a later "load more" / next-unread page-walk doesn't
+  // duplicate or silently stop short of older, not-yet-loaded articles.
+  function _advancePaginationCursor(list) {
+    const total = list.querySelectorAll('.news-item').length;
+    const loadMore = document.getElementById('load-more');
+    if (loadMore) {
+      try {
+        const url = new URL(loadMore.getAttribute('hx-get'), window.location.origin);
+        url.searchParams.set('offset', total);
+        url.searchParams.set('watermark_shown', '1');
+        loadMore.setAttribute('hx-get', url.pathname + url.search);
+        htmx.process(loadMore);
+      } catch (_) {}
+      return;
+    }
+    const endMarker = list.querySelector('.end-of-feed');
+    if (endMarker) {
+      const div = document.createElement('div');
+      div.id = 'load-more';
+      div.setAttribute('hx-get', `/articles?offset=${total}&watermark_shown=1`);
+      div.setAttribute('hx-trigger', 'intersect once');
+      div.setAttribute('hx-swap', 'outerHTML');
+      div.innerHTML = '<div class="loading">Loading more…</div>';
+      endMarker.replaceWith(div);
+      htmx.process(div);
+    }
+  }
+
   async function prependNew() {
     if (newestId === 0 || prependPending) return;
     prependPending = true;
     try {
-      const resp = await fetch('/articles/prepend?since_id=' + newestId);
-      const html = await resp.text();
-      if (!html.trim()) return;
-
       const list = document.getElementById('article-list');
-      const temp = document.createElement('div');
-      temp.innerHTML = html;
-      const newItems = Array.from(temp.querySelectorAll('.news-item'));
-      if (!newItems.length) return;
-
-      // Skip articles already present in the DOM
-      const toInsert = newItems.filter(item => !document.getElementById(item.id));
-      if (!toInsert.length) return;
-
-      const firstExisting = list.querySelector('.news-item');
       let insertedAtTop = false;
 
-      for (const newItem of toInsert) {
-        const newTime = getItemTime(newItem);
-        const newId   = getItemId(newItem);
+      // Loop: the server returns at most PAGE_SIZE rows per call (oldest-unseen
+      // first), so a large backlog (e.g. after the tab was backgrounded for a
+      // while) needs multiple round trips to fully catch up.
+      for (let guard = 0; guard < 25; guard++) {
+        const resp = await fetch('/articles/prepend?since_id=' + newestId);
+        const html = await resp.text();
+        const morePending = resp.headers.get('X-More-Pending') === '1';
+        if (!html.trim()) break;
 
-        // Find the correct insertion point to maintain published_at DESC, id DESC order
-        let insertBefore = null;
-        for (const existing of list.querySelectorAll('.news-item')) {
-          const et = getItemTime(existing), eid = getItemId(existing);
-          if (newTime > et || (newTime === et && newId > eid)) {
-            insertBefore = existing;
-            break;
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const newItems = Array.from(temp.querySelectorAll('.news-item'));
+        if (!newItems.length) break;
+
+        // Skip articles already present in the DOM
+        const toInsert = newItems.filter(item => !document.getElementById(item.id));
+
+        if (toInsert.length) {
+          const firstExisting = list.querySelector('.news-item');
+
+          for (const newItem of toInsert) {
+            const newTime = getItemTime(newItem);
+            const newId   = getItemId(newItem);
+
+            // Find the correct insertion point to maintain published_at DESC, id DESC order
+            let insertBefore = null;
+            for (const existing of list.querySelectorAll('.news-item')) {
+              const et = getItemTime(existing), eid = getItemId(existing);
+              if (newTime > et || (newTime === et && newId > eid)) {
+                insertBefore = existing;
+                break;
+              }
+            }
+
+            if (insertBefore) {
+              list.insertBefore(newItem, insertBefore);
+              if (insertBefore === firstExisting) insertedAtTop = true;
+            } else {
+              const anchor = document.getElementById('load-more') || list.querySelector('.end-of-feed');
+              list.insertBefore(newItem, anchor || null);
+            }
           }
+
+          htmx.process(list);
+          _advancePaginationCursor(list);
         }
 
-        if (insertBefore) {
-          list.insertBefore(newItem, insertBefore);
-          if (insertBefore === firstExisting) insertedAtTop = true;
-        } else {
-          const anchor = document.getElementById('load-more') || list.querySelector('.end-of-feed');
-          list.insertBefore(newItem, anchor || null);
-        }
+        // newestId = max DB id seen in this batch (advance even past duplicates,
+        // so a stuck/duplicate row can't spin the loop forever)
+        const allIds = newItems.map(getItemId);
+        if (allIds.length) newestId = Math.max(...allIds, newestId);
+
+        if (!morePending) break;
       }
-
-      htmx.process(list);
-
-      // newestId = max DB id seen across the whole DOM
-      const allIds = Array.from(list.querySelectorAll('.news-item')).map(getItemId);
-      if (allIds.length) newestId = Math.max(...allIds, newestId);
 
       if (insertedAtTop) window.scrollTo({ top: 0, behavior: 'smooth' });
 

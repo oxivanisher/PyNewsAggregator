@@ -26,7 +26,6 @@ class FilterConfig(BaseModel):
 
 class FeedDefaults(BaseModel):
     check_interval: int = 3600
-    max_articles: int = 500
     read_mode: ReadMode = ReadMode.expand
 
 
@@ -34,13 +33,13 @@ class FeedConfig(BaseModel):
     name: str
     url: str
     check_interval: Optional[int] = None
-    max_articles: Optional[int] = None
     read_mode: Optional[ReadMode] = None
     filters: list[FilterConfig] = []
 
 
 class AppConfig(BaseModel):
     defaults: FeedDefaults = FeedDefaults()
+    max_articles: int = 2000
     filters: list[FilterConfig] = []
     feeds: list[FeedConfig] = []
 
