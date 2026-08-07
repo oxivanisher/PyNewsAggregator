@@ -610,10 +610,22 @@
     // Double rAF: first frame kicks off the reflow from closeAll + expand,
     // second frame measures stable post-reflow geometry before scrolling.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      // Anchor on the item above the target, so it stays visible as context
-      // for what was just read — deliberate, keep the previous post in view.
-      const anchor = aboveEl || target;
-      const top = anchor.getBoundingClientRect().top + window.scrollY - headerH;
+      const targetTop = target.getBoundingClientRect().top + window.scrollY;
+      // Measured now, so it already reflects a wrapped (multi-line) title.
+      const targetHeaderH = target.querySelector('.article-header').offsetHeight;
+      let top;
+      if (aboveEl) {
+        const aboveTop = aboveEl.getBoundingClientRect().top + window.scrollY;
+        const budget = window.innerHeight - headerH - (targetTop - aboveTop);
+        // Anchor on the item above the target, so it stays visible as context —
+        // but only if the opened article's own header still fits below it.
+        // A long, wrapped title makes that header taller and unpredictable, so
+        // fall back to anchoring on the target itself rather than leaving its
+        // header cut off below the fold.
+        top = targetHeaderH <= budget ? aboveTop - headerH : targetTop - headerH;
+      } else {
+        top = targetTop - headerH;
+      }
       window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     }));
   }

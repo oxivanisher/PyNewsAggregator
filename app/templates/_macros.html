@@ -22,6 +22,9 @@
     <span class="feed-tag">{{ feed.name }}</span>
     <span class="article-time" data-published="{{ article.published_at.isoformat() }}Z">{{ article.published_at | time_ago }}</span>
     <span class="article-title" title="{{ article.title }}">{{ article.title }}</span>
+    {% if article.link %}
+      <a class="open-link" href="{{ article.link }}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">↗ Open original</a>
+    {% endif %}
   </div>
   <div class="article-body hidden" id="body-{{ article.id }}">
     {% if article.content %}
@@ -30,9 +33,6 @@
       <div class="article-content">{{ article.summary | safe }}</div>
     {% else %}
       <p class="no-content">No content in feed.</p>
-    {% endif %}
-    {% if article.link %}
-      <a class="open-link" href="{{ article.link }}" target="_blank" rel="noopener noreferrer">↗ Open original</a>
     {% endif %}
   </div>
 </article>
