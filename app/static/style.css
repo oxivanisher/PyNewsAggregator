@@ -241,7 +241,7 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 .news-item.expanded .feed-tag { color: var(--accent); background: rgba(99, 102, 241, 0.15); }
 .news-item.expanded .article-time { color: var(--text-muted); }
 .news-item.expanded .chevron { color: var(--accent); }
-.news-item.expanded .article-title { font-size: 1.05rem; }
+.news-item.expanded .article-title { font-size: 1.2rem; font-weight: 600; }
 
 /* hide the unread dot only visually while an article is open — read-state logic is untouched */
 .news-item.expanded .dot { display: none; }
