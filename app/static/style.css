@@ -251,10 +251,15 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 
 /* hide the unread dot only visually while an article is open — read-state logic is untouched */
 .news-item.expanded .dot { display: none; }
-.news-item.expanded .article-header { grid-template-columns: auto auto 1fr; }
-.news-item.expanded .feed-tag { grid-column: 1; }
-.news-item.expanded .article-time { grid-column: 2; }
-.news-item.expanded .article-title { grid-column: 3; }
+
+/* source + age on their own row, title wrapping on the row below — same layout as mobile */
+.news-item.expanded .article-header {
+  grid-template-columns: auto auto 1fr;
+  grid-template-rows: auto auto;
+}
+.news-item.expanded .feed-tag { grid-column: 1; grid-row: 1; }
+.news-item.expanded .article-time { grid-column: 2; grid-row: 1; }
+.news-item.expanded .article-title { grid-column: 1 / 4; grid-row: 2; }
 
 /* ── article body ──────────────────────────────────────────────────────────── */
 .article-body {
