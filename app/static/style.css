@@ -182,7 +182,7 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 
 .article-header {
   display: grid;
-  grid-template-columns: 1.2rem auto auto 1fr 1rem;
+  grid-template-columns: 1.2rem auto auto 1fr;
   align-items: center;
   gap: 0.5rem;
   padding: 0.65rem 0.75rem;
@@ -240,22 +240,21 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 .news-item.expanded .dot { color: var(--dot-unread); }
 .news-item.expanded .feed-tag { color: var(--accent); background: rgba(99, 102, 241, 0.15); }
 .news-item.expanded .article-time { color: var(--text-muted); }
-.news-item.expanded .chevron { color: var(--accent); }
-.news-item.expanded .article-title { font-size: 1.2rem; font-weight: 600; }
+.news-item.expanded .article-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  /* the removed body heading used to show the full title; let it wrap here instead of truncating */
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
 
 /* hide the unread dot only visually while an article is open — read-state logic is untouched */
 .news-item.expanded .dot { display: none; }
-.news-item.expanded .article-header { grid-template-columns: auto auto 1fr 1rem; }
+.news-item.expanded .article-header { grid-template-columns: auto auto 1fr; }
 .news-item.expanded .feed-tag { grid-column: 1; }
 .news-item.expanded .article-time { grid-column: 2; }
 .news-item.expanded .article-title { grid-column: 3; }
-.news-item.expanded .chevron { grid-column: 4; }
-
-.chevron {
-  font-size: 0.6rem;
-  color: var(--text-muted);
-  text-align: center;
-}
 
 /* ── article body ──────────────────────────────────────────────────────────── */
 .article-body {
@@ -483,7 +482,7 @@ label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bot
 /* ── mobile tweaks ─────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .article-header {
-    grid-template-columns: 1.2rem auto 1fr 1rem;
+    grid-template-columns: 1.2rem auto 1fr;
     grid-template-rows: auto auto;
   }
 
@@ -491,7 +490,6 @@ label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bot
   .article-time { grid-column: 3; grid-row: 1; }
   .article-title { grid-column: 2 / 4; grid-row: 2; white-space: normal; font-size: 0.875rem; }
   .dot { grid-row: 1 / 3; }
-  .chevron { grid-row: 1 / 3; }
 
   /* trim the open post's own header/body padding so, combined with the
      previous-post anchor above, less of it sits below the fold */
@@ -499,11 +497,10 @@ label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bot
   .news-item.expanded .article-body { padding: 0.5rem 1rem 0.75rem; }
 
   /* dot is hidden while open (see base rules) — reclaim its column for the title */
-  .news-item.expanded .article-header { grid-template-columns: auto 1fr 1rem; }
+  .news-item.expanded .article-header { grid-template-columns: auto 1fr; }
   .news-item.expanded .feed-tag { grid-column: 1; grid-row: 1; }
   .news-item.expanded .article-time { grid-column: 2; grid-row: 1; }
   .news-item.expanded .article-title { grid-column: 1 / 3; grid-row: 2; }
-  .news-item.expanded .chevron { grid-column: 3; grid-row: 1 / 3; }
 
   /* on mobile: images always stack (override feed inline floats) */
   .article-content img {

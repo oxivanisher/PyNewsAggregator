@@ -539,7 +539,6 @@
       body.classList.add('hidden');
       const article = document.querySelector('#article-' + thisId);
       if (!article) return;
-      article.querySelector('.chevron').textContent = '▶';
       article.classList.remove('expanded');
       // Mark as read when another article is opened (expand mode only)
       if (article.dataset.readMode === 'expand') markRead(parseInt(thisId), article);
@@ -549,19 +548,16 @@
   function toggleArticle(id, readMode) {
     const body = document.getElementById('body-' + id);
     const item = document.getElementById('article-' + id);
-    const chevron = item.querySelector('.chevron');
     const isOpen = !body.classList.contains('hidden');
 
     if (isOpen) {
       body.classList.add('hidden');
-      chevron.textContent = '▶';
       item.classList.remove('expanded');
       // Mark as read when explicitly closed (expand mode only)
       if (readMode === 'expand') markRead(id, item);
     } else {
       closeAll(id);
       body.classList.remove('hidden');
-      chevron.textContent = '▼';
       item.classList.add('expanded');
       scheduleUnreadCount(); // update tab title to reflect article being read
     }

@@ -22,7 +22,6 @@
     <span class="feed-tag">{{ feed.name }}</span>
     <span class="article-time" data-published="{{ article.published_at.isoformat() }}Z">{{ article.published_at | time_ago }}</span>
     <span class="article-title" title="{{ article.title }}">{{ article.title }}</span>
-    <span class="chevron">▶</span>
   </div>
   <div class="article-body hidden" id="body-{{ article.id }}">
     {% if article.content %}
