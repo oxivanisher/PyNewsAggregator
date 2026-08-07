@@ -598,18 +598,17 @@
   }
 
   function _openAndScrollTo(target) {
-    const all = Array.from(document.querySelectorAll('#article-list .news-item'));
     const id = parseInt(target.id.replace('article-', ''), 10);
     const readMode = target.dataset.readMode || 'expand';
-    const idx = all.indexOf(target);
-    const aboveEl = idx > 0 ? all[idx - 1] : null;
     const headerH = (document.querySelector('.app-header')?.offsetHeight) || 56;
     toggleArticle(id, readMode);
     // Double rAF: first frame kicks off the reflow from closeAll + expand,
     // second frame measures stable post-reflow geometry before scrolling.
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      const anchor = aboveEl || target;
-      const top = anchor.getBoundingClientRect().top + window.scrollY - headerH;
+      // Anchor on the target itself (not the item above it) so the expanded
+      // article isn't pushed down by a full closed-row height + margin —
+      // that extra offset was forcing a second scroll on mobile to reach the end.
+      const top = target.getBoundingClientRect().top + window.scrollY - headerH;
       window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     }));
   }
