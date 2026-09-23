@@ -9,6 +9,7 @@ A self-hosted, containerized RSS/Atom feed reader. No accounts, no database serv
 - Per-feed configurable polling interval with a global default
 - Timeline view, newest first, with infinite scroll
 - Click to expand full article content inline; click again to collapse
+- Removes tracking pixels (0/1-pixel images) from feed content
 - Three read modes: on expand, on scroll-past, or on load
 - Read-state sync across devices via an exportable/importable token
 - "You were here" watermark divider in the timeline

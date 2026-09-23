@@ -41,17 +41,39 @@ _ALLOWED_ATTRS: dict[str, set[str]] = {
 }
 
 
-def _sanitise_html(html: Optional[str]) -> Optional[str]:
-    """Strip unsafe tags/attributes and block non-http(s) URLs in feed HTML."""
+# Tracking pixels: <img> sized 0 or 1 in either dimension (e.g. golem.de's
+# 1×1 cpx.php). Matched on nh3's output, which always double-quotes attributes.
+_TRACKING_PIXEL_RE = re.compile(r'<img\b[^>]*?\s(?:width|height)="[01]"[^>]*>', re.IGNORECASE)
+
+
+def _strip_tracking_pixels(html: Optional[str]) -> Optional[str]:
     if not html:
         return html
-    return nh3.clean(
+    return _TRACKING_PIXEL_RE.sub("", html)
+
+
+def _sanitise_html(html: Optional[str]) -> Optional[str]:
+    """Strip unsafe tags/attributes, tracking pixels and non-http(s) URLs in feed HTML."""
+    if not html:
+        return html
+    return _strip_tracking_pixels(nh3.clean(
         html,
         tags=_ALLOWED_TAGS,
         attributes=_ALLOWED_ATTRS,
         url_schemes={"http", "https"},
         link_rel="noopener noreferrer",
-    )
+    ))
+
+
+def strip_stored_tracking_pixels(engine) -> None:
+    """One-off cleanup for articles stored before tracking pixels were stripped on fetch."""
+    with get_session(engine) as session:
+        rows = session.query(Article).filter(
+            Article.summary.contains("<img") | Article.content.contains("<img")
+        )
+        for article in rows:
+            article.summary = _strip_tracking_pixels(article.summary)
+            article.content = _strip_tracking_pixels(article.content)
 
 
 def _safe_url(url: Optional[str]) -> Optional[str]:
@@ -302,6 +324,7 @@ def sync_feeds(config: AppConfig, engine) -> None:
 
 def start_scheduler(config: AppConfig, engine) -> None:
     sync_feeds(config, engine)
+    strip_stored_tracking_pixels(engine)
 
     for fc in config.feeds:
         interval = fc.check_interval or config.defaults.check_interval
