@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import urllib.error
 import urllib.request
@@ -15,15 +16,20 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from .config import AppConfig, FeedConfig, FilterConfig, FilterType
 from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_session, reclaim_space
 
+logger = logging.getLogger(__name__)
+
 # Each entry is (token, queue); token="" for clients without a cookie.
 _sse_queues: list[tuple[str, asyncio.Queue]] = []
 _event_loop: Optional[asyncio.AbstractEventLoop] = None
 _scheduler = BackgroundScheduler(daemon=True)
-_vapid_private_key: Optional[str] = None
+_vapid_private_key = None  # py_vapid.Vapid instance, set in main.lifespan
 _vapid_claims: Optional[dict] = None
 _push_engine = None
 
 FETCH_TIMEOUT = 30  # seconds per feed HTTP request
+# Let the push service hold the message while the device is offline/dozing
+# (pywebpush defaults to 0, which makes FCM drop it if the phone is asleep).
+PUSH_TTL = 12 * 3600
 
 # Tags and attributes allowed in sanitised feed HTML
 _ALLOWED_TAGS = {
@@ -264,14 +270,17 @@ def _send_push() -> None:
                     },
                     data=payload,
                     vapid_private_key=_vapid_private_key,
-                    vapid_claims=_vapid_claims,
+                    vapid_claims=dict(_vapid_claims),  # webpush mutates it (aud per endpoint)
+                    ttl=PUSH_TTL,
                     timeout=10,
                 )
             except WebPushException as exc:
                 if exc.response is not None and exc.response.status_code in (404, 410):
                     to_delete.append(sub)
+                else:
+                    logger.warning("Push failed for %s: %s", sub.endpoint[:60], exc)
             except Exception:
-                pass
+                logger.exception("Push failed for %s", sub.endpoint[:60])
         for sub in to_delete:
             session.delete(sub)
 

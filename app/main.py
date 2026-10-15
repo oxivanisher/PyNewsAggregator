@@ -19,6 +19,7 @@ from fastapi import Cookie, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from py_vapid import Vapid
 
 from .config import load_config
 from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_engine, get_session
@@ -100,7 +101,8 @@ templates.env.filters["time_ago"] = _time_ago
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     fetcher_module._event_loop = asyncio.get_running_loop()
-    fetcher_module._vapid_private_key = VAPID_PRIVATE_KEY
+    # pywebpush only parses raw/DER key strings, so hand it a parsed key object
+    fetcher_module._vapid_private_key = Vapid.from_pem(VAPID_PRIVATE_KEY.encode())
     fetcher_module._vapid_claims = {"sub": VAPID_CONTACT}
     fetcher_module._push_engine = engine
     start_scheduler(config, engine)
