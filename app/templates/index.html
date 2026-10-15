@@ -98,6 +98,18 @@
 </div>
 
 <script>
+  // ── installed-app marker ───────────────────────────────────────────────────
+  // sw.js focuses windows carrying ?source=pwa on notification click. Keep the
+  // marker even if the app was installed with an older start_url or got
+  // redirected to plain "/" (e.g. after "mark all read").
+  if (matchMedia('(display-mode: standalone)').matches) {
+    const u = new URL(location.href);
+    if (u.searchParams.get('source') !== 'pwa') {
+      u.searchParams.set('source', 'pwa');
+      history.replaceState(history.state, '', u);
+    }
+  }
+
   // ── theme ──────────────────────────────────────────────────────────────────
   function applyTheme(theme) {
     if (theme === 'auto') {
