@@ -152,6 +152,7 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
             feed.last_fetched_at = datetime.now(timezone.utc)
             return
 
+        feed_id = feed.id
         existing_guids = {
             row[0] for row in session.query(Article.guid).filter(Article.feed_id == feed.id)
         }
@@ -219,7 +220,7 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
             asyncio.run_coroutine_threadsafe(_broadcast(new_count), _event_loop)
         if _vapid_private_key and _push_engine:
             import threading
-            threading.Thread(target=_send_push, daemon=True).start()
+            threading.Thread(target=_send_push, args=(feed_id,), daemon=True).start()
 
 
 def _unread_for_token(token: str, session) -> int:
@@ -243,10 +244,12 @@ def _unread_for_token(token: str, session) -> int:
     )
     if token_obj.watermark_at:
         query = query.filter(Article.published_at > token_obj.watermark_at)
+    if token_obj.reading_article_id is not None:
+        query = query.filter(Article.id != token_obj.reading_article_id)
     return query.count()
 
 
-def _send_push() -> None:
+def _send_push(feed_id: int) -> None:
     try:
         from pywebpush import WebPushException, webpush
     except ImportError:
@@ -255,7 +258,16 @@ def _send_push() -> None:
     with get_session(_push_engine) as session:
         subs = session.query(PushSubscription).all()
         to_delete = []
+        hiding = {
+            row[0] for row in session.query(HiddenFeed.token).filter(HiddenFeed.feed_id == feed_id)
+        }
+        pushed_tokens = set()
         for sub in subs:
+            if sub.token in hiding:
+                continue  # new articles are from a feed this user hides
+            token_obj = session.get(Token, sub.token) if sub.token else None
+            if token_obj and token_obj.last_pushed_at:
+                continue  # already notified; wait until the user comes back
             unread = _unread_for_token(sub.token, session) if sub.token else 0
             if unread == 0:
                 continue
@@ -274,6 +286,8 @@ def _send_push() -> None:
                     ttl=PUSH_TTL,
                     timeout=10,
                 )
+                if token_obj:
+                    pushed_tokens.add(token_obj)
             except WebPushException as exc:
                 if exc.response is not None and exc.response.status_code in (404, 410):
                     to_delete.append(sub)
@@ -283,6 +297,9 @@ def _send_push() -> None:
                 logger.exception("Push failed for %s", sub.endpoint[:60])
         for sub in to_delete:
             session.delete(sub)
+        now = datetime.now(timezone.utc)
+        for token_obj in pushed_tokens:
+            token_obj.last_pushed_at = now
 
 
 async def _broadcast(count: int) -> None:

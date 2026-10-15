@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="News">
-  <link rel="apple-touch-icon" href="/static/icon.svg">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
   <link rel="stylesheet" href="/static/style.css?v={{ git_commit }}">
   <script>
     // Apply saved theme before first paint to prevent flash
@@ -559,6 +559,8 @@
       closeAll(id);
       body.classList.remove('hidden');
       item.classList.add('expanded');
+      // so push notifications don't count the article being read as unread
+      if (!item.classList.contains('read')) fetch('/reading/' + id, { method: 'POST' }).catch(() => {});
       scheduleUnreadCount(); // update tab title to reflect article being read
     }
   }

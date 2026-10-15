@@ -56,6 +56,12 @@ class Token(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_seen_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     watermark_at = Column(DateTime, nullable=True)
+    # Article currently expanded in the UI; it stays unread until the user
+    # moves on, but shouldn't count towards push notifications.
+    reading_article_id = Column(Integer, nullable=True)
+    # Set when a push is sent, cleared by user activity: at most one push per
+    # absence, so a phone isn't buzzed on every feed check.
+    last_pushed_at = Column(DateTime, nullable=True)
 
     read_articles = relationship("ReadArticle", back_populates="token_obj", cascade="all, delete-orphan")
 
@@ -93,6 +99,8 @@ def _migrate(engine) -> None:
     migrations = [
         ("feeds", "http_etag", "TEXT"),
         ("feeds", "http_modified", "TEXT"),
+        ("tokens", "reading_article_id", "INTEGER"),
+        ("tokens", "last_pushed_at", "DATETIME"),
     ]
     with engine.connect() as conn:
         for table, column, definition in migrations:

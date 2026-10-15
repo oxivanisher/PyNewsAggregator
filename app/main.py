@@ -170,6 +170,7 @@ async def index(request: Request, news_token: Optional[str] = Cookie(default=Non
     response = templates.TemplateResponse(request, "index.html", {"git_commit": GIT_COMMIT})
     with get_session(engine) as session:
         token_obj = _ensure_token(news_token, session, response)
+        token_obj.last_pushed_at = None  # user is back: re-arm push notifications
         response.set_cookie("news_token", token_obj.token, max_age=60 * 60 * 24 * 3650, httponly=True, samesite="lax")
     return response
 
@@ -390,10 +391,20 @@ async def mark_read(article_id: int, news_token: Optional[str] = Cookie(default=
     with get_session(engine) as session:
         token_obj = _ensure_token(news_token, session)
         token_str = token_obj.token
+        token_obj.last_pushed_at = None
         existing = session.get(ReadArticle, (token_str, article_id))
         if not existing:
             session.add(ReadArticle(token=token_str, article_id=article_id))
     await broadcast_to_token(token_str, {"read_article": article_id})
+    return Response(status_code=204)
+
+
+@app.post("/reading/{article_id}")
+async def set_reading(article_id: int, news_token: Optional[str] = Cookie(default=None)):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        token_obj.reading_article_id = article_id
+        token_obj.last_pushed_at = None
     return Response(status_code=204)
 
 
@@ -406,6 +417,7 @@ async def set_watermark(news_token: Optional[str] = Cookie(default=None)):
         token_str = token_obj.token
         watermark_ts = datetime.now(timezone.utc)
         token_obj.watermark_at = watermark_ts
+        token_obj.last_pushed_at = None
     await broadcast_to_token(token_str, {"watermark": watermark_ts.isoformat()})
     return RedirectResponse("/", status_code=303)
 

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <!-- Monochrome notification badge: Android only uses the alpha channel -->
+  <rect x="24" y="36" width="144" height="22" rx="11" fill="white"/>
+  <rect x="24" y="76" width="106" height="16" rx="8" fill="white"/>
+  <rect x="24" y="104" width="130" height="16" rx="8" fill="white"/>
+  <rect x="24" y="132" width="89" height="16" rx="8" fill="white"/>
+</svg>

@@ -2,11 +2,15 @@
   "name": "News",
   "short_name": "News",
   "description": "Self-hosted RSS/Atom news reader",
-  "start_url": "/",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0f1117",
   "theme_color": "#6366f1",
   "icons": [
-    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
