@@ -6,6 +6,7 @@ A self-hosted, containerized RSS/Atom feed reader. No accounts, no database serv
 
 - Configure feeds in a YAML file — no UI settings
 - Global and per-feed headline filters (substring and regex)
+- Rule-based categories (e.g. Tech, Security, Sports): filter the timeline by category, mark a category read, or hide it entirely
 - Per-feed configurable polling interval with a global default
 - Timeline view, newest first, with infinite scroll
 - Click to expand full article content inline; click again to collapse
@@ -40,6 +41,7 @@ All settings live in `config.yaml` (mounted into the container as read-only). Se
 | `defaults.read_mode` | How articles are marked read: `expand`, `scroll`, or `load` (default: `expand`) |
 | `max_articles` | Total articles retained across all feeds before the oldest are pruned (default: `2000`) |
 | `filters` | List of global headline filters (applied to all feeds) |
+| `categories` | Ordered list of category rules (see below) |
 | `feeds` | List of feed sources |
 
 ### Filter format
@@ -58,10 +60,35 @@ feeds:
     url: https://example.com/feed.xml
     check_interval: 1800   # optional override
     read_mode: scroll       # optional override
+    category: Tech          # optional fallback when no category rule matches
     filters:               # optional extra filters for this feed only
       - type: substring
         pattern: "some noise"
 ```
+
+### Categories
+
+Each article gets exactly one category: the first one in the list with a matching rule,
+otherwise its feed's `category`, otherwise `Other`. Patterns are case-insensitive regular
+expressions; `patterns` are matched against the headline plus any category tags the feed
+itself provides, `link_patterns` against the article URL.
+
+```yaml
+categories:
+  - name: Security          # listed first, so "Linux-Lücke" isn't filed under Tech
+    patterns:
+      - '\bsicherheitsl(ü|ue)cke|vulnerab|\bcve-\d'
+  - name: Sports
+    patterns:
+      - 'fu(ss|ß)ball|\bfootball|\btennis'
+    link_patterns:
+      - '/sport/'            # news sites often keep a whole section under one path
+```
+
+Categories are recomputed for all stored articles on startup, so rule changes apply
+retroactively. In the UI, a chip row under the header filters the timeline; while a
+category is selected, the title button marks only that category as read. Categories can
+be hidden per device token in the settings.
 
 ### Read modes
 

@@ -19,7 +19,7 @@
 >
   <div class="article-header" onclick="toggleArticle({{ article.id }}, '{{ feed.read_mode }}')">
     <span class="dot">{{ '○' if is_read else '●' }}</span>
-    <span class="feed-tag">{{ feed.name }}</span>
+    <span class="feed-tag">{{ feed.name }}{% if article.category and article.category != 'Other' %}<span class="cat-label"> · {{ article.category }}</span>{% endif %}</span>
     <span class="article-time" data-published="{{ article.published_at.isoformat() }}Z">{{ article.published_at | time_ago }}</span>
     <span class="article-title" title="{{ article.title }}">{{ article.title }}</span>
     {% if article.link %}

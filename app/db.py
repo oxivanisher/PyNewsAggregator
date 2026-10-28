@@ -45,6 +45,10 @@ class Article(Base):
     summary = Column(Text, nullable=True)
     content = Column(Text, nullable=True)
     filtered = Column(Boolean, default=False, nullable=False)
+    # The feed's own <category> terms, kept so categories can be recomputed
+    # when the rules in the config change
+    tags = Column(Text, nullable=True)
+    category = Column(String, nullable=True)
 
     feed = relationship("Feed", back_populates="articles")
 
@@ -83,6 +87,13 @@ class HiddenFeed(Base):
     feed_id = Column(Integer, ForeignKey("feeds.id", ondelete="CASCADE"), primary_key=True)
 
 
+class HiddenCategory(Base):
+    __tablename__ = "hidden_categories"
+
+    token = Column(String, ForeignKey("tokens.token", ondelete="CASCADE"), primary_key=True)
+    category = Column(String, primary_key=True)
+
+
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"
 
@@ -101,6 +112,8 @@ def _migrate(engine) -> None:
         ("feeds", "http_modified", "TEXT"),
         ("tokens", "reading_article_id", "INTEGER"),
         ("tokens", "last_pushed_at", "DATETIME"),
+        ("articles", "tags", "TEXT"),
+        ("articles", "category", "TEXT"),
     ]
     with engine.connect() as conn:
         for table, column, definition in migrations:

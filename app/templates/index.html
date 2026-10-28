@@ -30,6 +30,7 @@
   </button>
   <span id="refresh-timer" class="refresh-timer"></span>
   <button class="btn-ghost btn-settings" onclick="openSettingsModal()" title="Settings">⚙</button>
+  <nav id="category-bar" class="category-bar hidden"></nav>
 </header>
 
 
@@ -59,6 +60,9 @@
       <button class="btn-secondary" id="theme-btn-light" onclick="applyTheme('light')">☀ Light</button>
       <button class="btn-secondary" id="theme-btn-dark"  onclick="applyTheme('dark')">☾ Dark</button>
     </div>
+
+    <h3 class="settings-section-title">Categories</h3>
+    <div id="categories-list" class="feeds-list"></div>
 
     <h3 class="settings-section-title">Sources</h3>
     <div id="feeds-list" class="feeds-list"></div>
@@ -145,6 +149,22 @@
       document.getElementById('token-value').textContent = data.token || '(none)';
     });
 
+    // Load categories
+    const catList = document.getElementById('categories-list');
+    catList.innerHTML = '<p class="modal-hint">Loading…</p>';
+    fetch('/categories').then(r => r.json()).then(cats => {
+      catList.innerHTML = cats.map((c, i) => `<div class="feed-row${c.hidden ? ' feed-row--hidden' : ''}" id="cat-row-${i}">
+          <div class="feed-row-header">
+            <span class="feed-row-name">${escHtml(c.name)}</span>
+            <label class="feed-toggle">
+              <input type="checkbox" ${c.hidden ? '' : 'checked'} data-name="${escHtml(c.name)}" onchange="toggleCategoryHidden(this, ${i})">
+              <span class="feed-toggle-label">${c.hidden ? 'hidden' : 'visible'}</span>
+            </label>
+          </div>
+          <div class="feed-row-meta"><span class="feed-row-stats">${c.article_count} articles</span></div>
+        </div>`).join('');
+    }).catch(() => { catList.innerHTML = '<p class="modal-hint">Failed to load categories.</p>'; });
+
     // Load feeds
     const list = document.getElementById('feeds-list');
     list.innerHTML = '<p class="modal-hint">Loading…</p>';
@@ -191,11 +211,77 @@
         const tog = row.querySelector('.feed-toggle');
         if (tog) tog.title = hidden ? 'Hidden — click to show' : 'Visible — click to hide';
       }
-      htmx.ajax('GET', '/articles', {target: '#article-list', swap: 'innerHTML'});
+      reloadArticles();
       updateUnreadCount();
     } finally {
       checkbox.disabled = false;
     }
+  }
+
+  async function toggleCategoryHidden(checkbox, idx) {
+    const name = checkbox.dataset.name;
+    checkbox.disabled = true;
+    try {
+      const { hidden } = await fetch('/categories/toggle?name=' + encodeURIComponent(name), {method: 'POST'})
+        .then(r => r.json());
+      checkbox.checked = !hidden;
+      const row = document.getElementById('cat-row-' + idx);
+      if (row) {
+        row.classList.toggle('feed-row--hidden', hidden);
+        const lbl = row.querySelector('.feed-toggle-label');
+        if (lbl) lbl.textContent = hidden ? 'hidden' : 'visible';
+      }
+      if (hidden && currentCategory === name) currentCategory = null;
+      reloadArticles();
+      updateUnreadCount();
+    } finally {
+      checkbox.disabled = false;
+    }
+  }
+
+  // ── categories ─────────────────────────────────────────────────────────────
+  let currentCategory = null;  // null = all categories
+
+  // Query-string fragment restricting a request to the selected category
+  function categoryQuery(sep) {
+    return currentCategory ? `${sep}category=${encodeURIComponent(currentCategory)}` : '';
+  }
+
+  function reloadArticles() {
+    htmx.ajax('GET', '/articles' + categoryQuery('?'), {target: '#article-list', swap: 'innerHTML'});
+  }
+
+  function selectCategory(name) {
+    currentCategory = name;
+    reloadArticles();
+    window.scrollTo({ top: 0 });
+    updateUnreadCount();
+  }
+
+  function renderCategoryBar(categories, total) {
+    const bar = document.getElementById('category-bar');
+    // A single chip (or none) wouldn't filter anything
+    if (categories.length < 2) { bar.classList.add('hidden'); return; }
+    bar.classList.remove('hidden');
+    const chips = [{name: null, label: 'All', unread: total}]
+      .concat(categories.map(c => ({name: c.name, label: c.name, unread: c.unread})));
+    // Rebuild only when the set of chips changes, so periodic count refreshes
+    // don't reset the bar's horizontal scroll position
+    const key = chips.map(c => c.label).join('\n');
+    if (bar.dataset.key !== key) {
+      bar.dataset.key = key;
+      bar.innerHTML = chips.map((c, i) =>
+        `<button class="cat-chip" data-idx="${i}">${escHtml(c.label)}<span class="cat-chip-count"></span></button>`
+      ).join('');
+      bar.querySelectorAll('.cat-chip').forEach((btn, i) => {
+        // Tapping the active chip again goes back to All
+        btn.onclick = () => selectCategory(chips[i].name === currentCategory ? null : chips[i].name);
+      });
+    }
+    bar.querySelectorAll('.cat-chip').forEach((btn, i) => {
+      btn.classList.toggle('cat-chip--active', chips[i].name === currentCategory);
+      btn.querySelector('.cat-chip-count').textContent = chips[i].unread > 0 ? chips[i].unread : '';
+    });
   }
 
   function copyToken() {
@@ -213,9 +299,18 @@
 
   // ── mark all read ──────────────────────────────────────────────────────────
   function markAllRead() {
+    if (currentCategory) {
+      // Only this category: the watermark is global, so mark the articles individually
+      fetch('/categories/mark-read?name=' + encodeURIComponent(currentCategory), {method: 'POST'})
+        .then(r => r.json())
+        .then(({ read_ids }) => {
+          read_ids.forEach(id => markReadInDom(id));
+          updateUnreadCount();
+        });
+      return;
+    }
     fetch('/watermark', {method: 'POST', redirect: 'manual'}).then(() => {
-      htmx.ajax('GET', '/articles', {target: '#article-list', swap: 'innerHTML'});
-      hideBanner();
+      reloadArticles();
       updateUnreadCount();
     });
   }
@@ -271,7 +366,7 @@
     if (endMarker) {
       const div = document.createElement('div');
       div.id = 'load-more';
-      div.setAttribute('hx-get', `/articles?offset=${total}&watermark_shown=1`);
+      div.setAttribute('hx-get', `/articles?offset=${total}&watermark_shown=1${categoryQuery('&')}`);
       div.setAttribute('hx-trigger', 'intersect once');
       div.setAttribute('hx-swap', 'outerHTML');
       div.innerHTML = '<div class="loading">Loading more…</div>';
@@ -291,7 +386,7 @@
       // first), so a large backlog (e.g. after the tab was backgrounded for a
       // while) needs multiple round trips to fully catch up.
       for (let guard = 0; guard < 25; guard++) {
-        const resp = await fetch('/articles/prepend?since_id=' + newestId);
+        const resp = await fetch('/articles/prepend?since_id=' + newestId + categoryQuery('&'));
         const html = await resp.text();
         const morePending = resp.headers.get('X-More-Pending') === '1';
         if (!html.trim()) break;
@@ -370,6 +465,7 @@
         const data = JSON.parse(e.data);
         if (data.new_articles) { schedulePrepend(); fetchStatus(); }
         if (data.read_article != null) markReadInDom(data.read_article);
+        if (data.read_articles) data.read_articles.forEach(markReadInDom);
         if (data.watermark)    markWatermarkInDom(data.watermark);
       } catch (_) {}
     };
@@ -519,13 +615,26 @@
 
   async function updateUnreadCount() {
     try {
-      const { unread } = await fetch('/unread-count').then(r => r.json());
+      const { unread, categories } = await fetch('/unread-count').then(r => r.json());
+      // The selected category may have vanished (hidden on another device, or emptied by pruning)
+      if (currentCategory && !categories.some(c => c.name === currentCategory)) {
+        currentCategory = null;
+        reloadArticles();
+      }
+      renderCategoryBar(categories, unread);
       // If an unread article is currently open, the user is reading it — don't count it
       const reading = document.querySelector('#article-list .news-item.expanded:not(.read)');
       const displayed = reading ? Math.max(0, unread - 1) : unread;
       document.title = displayed > 0 ? `(${displayed}) News` : 'News';
+      // The badge belongs to the title button, so it counts what that button would mark read
+      const viewUnread = currentCategory
+        ? categories.find(c => c.name === currentCategory).unread
+        : unread;
+      const viewDisplayed = reading ? Math.max(0, viewUnread - 1) : viewUnread;
       const badge = document.getElementById('unread-badge');
-      if (badge) badge.textContent = displayed > 0 ? displayed : '';
+      if (badge) badge.textContent = viewDisplayed > 0 ? viewDisplayed : '';
+      const titleBtn = document.querySelector('.app-title-btn');
+      if (titleBtn) titleBtn.title = currentCategory ? `Mark all ${currentCategory} as read` : 'Mark all as read';
     } catch (_) {}
   }
 
@@ -668,7 +777,7 @@
 
       // Nothing unread in the current DOM — ask the server if anything exists below the fold
       try {
-        const { id } = await fetch('/next-unread').then(r => r.json());
+        const { id } = await fetch('/next-unread' + categoryQuery('?')).then(r => r.json());
         if (!id) return;
         await _loadPagesUntil(id);
         const el = document.getElementById('article-' + id);

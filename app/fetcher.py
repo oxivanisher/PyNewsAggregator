@@ -13,8 +13,11 @@ import feedparser
 import nh3
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from .config import AppConfig, FeedConfig, FilterConfig, FilterType
-from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_session, reclaim_space
+from .config import OTHER_CATEGORY, AppConfig, FeedConfig, FilterConfig, FilterType
+from .db import (
+    Article, Feed, HiddenCategory, HiddenFeed, PushSubscription, ReadArticle, Token,
+    get_session, reclaim_space,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +133,60 @@ def is_filtered(title: str, filters: list[FilterConfig]) -> bool:
     return False
 
 
-def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfig], max_articles: int) -> None:
+# (category name, regex for title + tags, regex for the link); either regex may be None
+CategoryRules = list[tuple[str, Optional[re.Pattern], Optional[re.Pattern]]]
+
+
+def _combine(patterns: list[str]) -> Optional[re.Pattern]:
+    if not patterns:
+        return None
+    return re.compile("|".join(f"(?:{p})" for p in patterns), re.IGNORECASE)
+
+
+def compile_category_rules(config: AppConfig) -> CategoryRules:
+    """One combined case-insensitive regex per category and field, in config order."""
+    return [
+        (c.name, _combine(c.patterns), _combine(c.link_patterns))
+        for c in config.categories if c.patterns or c.link_patterns
+    ]
+
+
+def categorize(
+    title: str, tags: Optional[str], link: Optional[str], rules: CategoryRules, fallback: Optional[str],
+) -> str:
+    text = f"{title}\n{tags}" if tags else title
+    for name, text_regex, link_regex in rules:
+        if text_regex and text_regex.search(text):
+            return name
+        if link_regex and link and link_regex.search(link):
+            return name
+    return fallback or OTHER_CATEGORY
+
+
+def recategorize_articles(config: AppConfig, engine, rules: CategoryRules) -> None:
+    """Re-apply the category rules to stored articles, so config edits take effect retroactively."""
+    fallback_by_url = {fc.url: fc.category for fc in config.feeds}
+    with get_session(engine) as session:
+        rows = session.query(
+            Article.id, Article.title, Article.tags, Article.link, Article.category, Feed.url,
+        ).join(Feed)
+        for article_id, title, tags, link, current, feed_url in rows.all():
+            category = categorize(title, tags, link, rules, fallback_by_url.get(feed_url))
+            if category != current:
+                session.query(Article).filter(Article.id == article_id).update(
+                    {Article.category: category}, synchronize_session=False
+                )
+
+
+def _entry_tags(entry) -> Optional[str]:
+    terms = [t.get("term") for t in entry.get("tags", []) if t.get("term")]
+    return ", ".join(terms) or None
+
+
+def fetch_feed(
+    feed_config: FeedConfig, engine, global_filters: list[FilterConfig], max_articles: int,
+    category_rules: CategoryRules,
+) -> None:
     """max_articles is a global cap enforced across all feeds combined, not per feed."""
     combined_filters = global_filters + feed_config.filters
 
@@ -176,16 +232,20 @@ def fetch_feed(feed_config: FeedConfig, engine, global_filters: list[FilterConfi
 
             title = entry.get("title", "(no title)")
             filtered = is_filtered(title, combined_filters)
+            tags = _entry_tags(entry)
+            link = _safe_url(entry.get("link"))
 
             session.add(Article(
                 feed_id=feed.id,
                 guid=guid,
                 title=title,
-                link=_safe_url(entry.get("link")),
+                link=link,
                 published_at=published_at,
                 summary=_sanitise_html(entry.get("summary")),
                 content=content,
                 filtered=filtered,
+                tags=tags,
+                category=categorize(title, tags, link, category_rules, feed_config.category),
             ))
             existing_guids.add(guid)
             if not filtered:
@@ -237,10 +297,16 @@ def _unread_for_token(token: str, session) -> int:
         .filter(HiddenFeed.token == token)
         .scalar_subquery()
     )
+    hidden_cat_subq = (
+        session.query(HiddenCategory.category)
+        .filter(HiddenCategory.token == token)
+        .scalar_subquery()
+    )
     query = session.query(Article).filter(
         Article.filtered.is_(False),
         ~Article.id.in_(read_ids_subq),
         ~Article.feed_id.in_(hidden_subq),
+        ~Article.category.in_(hidden_cat_subq),
     )
     if token_obj.watermark_at:
         query = query.filter(Article.published_at > token_obj.watermark_at)
@@ -351,6 +417,8 @@ def sync_feeds(config: AppConfig, engine) -> None:
 def start_scheduler(config: AppConfig, engine) -> None:
     sync_feeds(config, engine)
     strip_stored_tracking_pixels(engine)
+    category_rules = compile_category_rules(config)
+    recategorize_articles(config, engine, category_rules)
 
     for fc in config.feeds:
         interval = fc.check_interval or config.defaults.check_interval
@@ -358,7 +426,7 @@ def start_scheduler(config: AppConfig, engine) -> None:
             fetch_feed,
             "interval",
             seconds=interval,
-            args=[fc, engine, config.filters, config.max_articles],
+            args=[fc, engine, config.filters, config.max_articles, category_rules],
             id=f"feed_{fc.url}",
             replace_existing=True,
             next_run_time=datetime.now(),

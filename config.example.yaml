@@ -19,18 +19,81 @@ filters:
   - type: regex
     pattern: "\\[AD\\d?\\]"
 
+# Categories: articles are sorted into the first category with a matching
+# pattern, so order matters (e.g. Security before Tech, so "Linux-Lücke"
+# lands in Security). Patterns are case-insensitive regular expressions,
+# matched against the headline and any category tags the feed provides.
+# Tips: \b marks a word boundary; leave it off the end of German word stems
+# so compounds match too (\bsicherheitsl matches "Sicherheitslücke").
+# Articles nothing matched fall back to their feed's `category`, or "Other".
+categories:
+  - name: Security
+    patterns:
+      - '\bsicherheitsl(ü|ue)cke|\bl(ü|ue)cke\b|schwachstelle'
+      - 'vulnerab|\bcve-\d|\bzero[- ]?day|\bexploit'
+      - '\bmalware|ransomware|\bphishing|\bbotnet|\btrojaner|\btrojan\b|\bspyware|\bbackdoor|hintert(ü|ue)r'
+      - 'datenleck|data breach|\bbreach(ed)?\b|\bleak(ed)?\b'
+      - '(cyber|hacker)angriff|cyber-?attack|\bhack(ed|en|t)\b|infiltr|kompromittier|\bcompromised'
+      - 'sicherheitsupdate|security (update|advisory|flaw|fix|hole|bug|patch)|\bpatchday'
+
+  - name: Sports
+    patterns:
+      - 'fu(ss|ß)ball|\bfootball|\bsoccer|\bbundesliga|premier league|champions league|super league|\bnati\b'
+      - 'weltmeister|europameister|\bolympi|\bweltcup|world cup'
+      - '\bformel 1\b|\bformula (1|one)\b|\bf1\b|\bmotogp'
+      - '\btennis|wimbledon|\bski(rennen|fahrer|springen|sport)?\b|eishockey|\bhockey|\brugby|\bcricket'
+      - '\bnba\b|\bnfl\b|\bnhl\b|\bbasketball|\bmarathon|tour de france|\bradsport|\bcycling'
+      - '\bsport(s)?\b|\bboxing|\bboxen|\bgrand slam|\batp\b|\bwta\b|red card|ballon d.or'
+    # BBC and SRF keep all sport under /sport/ - catches items that only name players or clubs
+    link_patterns:
+      - '/sport/'
+
+  - name: Politics
+    patterns:
+      # "wahl" but not "Auswahl" or "wahlweise"
+      - '(?<!aus)wahl(?!weise)|\belection|\bvoting\b|abstimmung|\breferend'
+      - 'regierung|\bgovernment|\bparlament|\bparliament|\bbundesrat|\bnationalrat|\bst(ä|ae)nderat|\bbundestag|\bcongress|\bsenat'
+      - '\bminister|\bkanzler|\bchancellor|\bpr(ä|ae)sident|\bpresident|\bpartei|\bkoalition|\bcoalition'
+      - '\bgesetz|\bverordnung|\bregulierung|\bregulation|\beu-kommission|european commission|\beu-parlament'
+      - '(ü|ue)berwachung|\bsurveillance|\bdatenschutz|\bdsgvo|\bgdpr|\bzensur|\bcensorship'
+      - '\bkrieg|\bwarfare|\bmilit(ä|ae)r|\bmilitary|\barmee|\bnato\b|\bsanktion|\bsanction'
+
+  - name: Tech
+    patterns:
+      - '\blinux|\bkernel|\bubuntu|\bfedora|\bdebian|\barch linux|bsd\b|\bwindows|\bmacos|\bandroid|\bios\b'
+      - '\bki\b|\bki-|\bai\b|\bllm|k(ü|ue)nstliche intelligenz|artificial intelligence|\bchatgpt|\bopenai|\banthropic'
+      - '\bapple\b|\bgoogle|\bmicrosoft|\bsamsung|\bnvidia|\bamd\b|\bintel\b|\bqualcomm|\biphone|\bipad|\bmacbook'
+      - '\bsoftware|\bhardware|\bcpu|\bgpu|\bprozessor|\bprocessor|\bchip|\bssd\b|\braspberry|\bsmartphone|\blaptop|\bnotebook'
+      - '\bprogrammier|\bprogramming|\bpython|\brust\b|\bjavascript|\btypescript|\bgithub|open[- ]source|\bdocker|\bkubernetes'
+      - '\bbrowser|\bfirefox|\bchrome\b|\bwayland|\bkde\b|\bgnome|\bmesa\b|\bvulkan|\bopengl'
+
+  - name: Science
+    link_patterns:
+      - 'srf\.ch/wissen/'
+    patterns:
+      - '\bforsch|\bresearch|\bstudie|\bstudy\b|\bscien|\bwissenschaft'
+      - '\braum(fahrt|gleiter|schiff|station|sonde)|\bspace(x|craft| station)?\b|\bnasa\b|\besa\b|\brakete|\brocket|\bastronom|\bmars\b|\bmond\b|\bmoon\b'
+      - '\bklima|\bclimate|\bphysi[ck]|\bbiolog|\bmedizin|\bmedical|\bgenom|\bdna\b|\bvirus|\bimpf|\bvaccin|\bfossil|\bdinosaur'
+
+  - name: Business
+    link_patterns:
+      - 'srf\.ch/news/wirtschaft/'
+    patterns:
+      - '\bb(ö|oe)rse|\bstock market|\baktie|\bipo\b|\bumsatz|\brevenue|\bgewinn\b|\bprofit|\bquartal|\bquarterly'
+      - '(ü|ue)bernahme|\bacquisition|\bacquires?\b|\bmerger'
+      - '\binflation|\bzins|interest rate|\bnotenbank|central bank|\bezb\b|\bsnb\b|\bkonjunktur|\brezession|\brecession|\beconomy|\bwirtschaft'
+      - '\bentlass|\blayoffs?\b|stellenabbau|\binsolven|\bbankrupt|\bpleite|\bbudget\b'
+
 feeds:
   - name: Hacker News
     url: https://news.ycombinator.com/rss
+    category: Tech   # used when no category rule matches
     check_interval: 900   # override: check every 15 minutes
 
   - name: BBC News
     url: https://feeds.bbci.co.uk/news/rss.xml
-    # inherits global defaults
-
-  - name: Python Releases
-    url: https://www.python.org/downloads/feed.xml
-    read_mode: load       # just track; auto-mark as read when seen
+    read_mode: scroll     # override: mark as read when scrolled past
     filters:
       - type: substring
-        pattern: "security"  # per-feed extra filter on top of global ones
+        pattern: "Watch:"  # per-feed extra filter on top of global ones
+

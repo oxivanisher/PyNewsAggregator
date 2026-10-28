@@ -79,7 +79,39 @@ body {
   background: color-mix(in srgb, var(--bg) 90%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
 }
+
+/* ── category chips ────────────────────────────────────────────────────────── */
+/* own full-width row inside the sticky header; scrolls sideways instead of wrapping */
+.category-bar {
+  flex-basis: 100%;
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.5rem -1rem -0.25rem;
+  padding: 0 1rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.category-bar::-webkit-scrollbar { display: none; }
+
+.cat-chip {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  padding: 0.25rem 0.7rem;
+  border-radius: 9999px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.cat-chip:hover { color: var(--text); }
+.cat-chip--active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cat-chip--active:hover { color: #fff; }
+.cat-chip-count { margin-left: 0.35rem; font-size: 0.7rem; font-weight: 700; opacity: 0.8; }
+.cat-chip-count:empty { display: none; }
 
 .app-title-btn {
   font-size: 1.1rem;
@@ -212,6 +244,8 @@ button { cursor: pointer; font-family: inherit; font-size: 0.875rem; border: non
 }
 
 .news-item.read .feed-tag { color: var(--text-muted); background: transparent; }
+
+.cat-label { font-weight: 400; opacity: 0.8; }
 
 .article-time {
   font-size: 0.75rem;

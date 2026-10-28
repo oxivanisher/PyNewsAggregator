@@ -15,7 +15,7 @@
 
 {% if has_more %}
 <div id="load-more"
-     hx-get="/articles?offset={{ next_offset }}&watermark_shown={{ watermark_shown }}"
+     hx-get="/articles?offset={{ next_offset }}&watermark_shown={{ watermark_shown }}{% if category %}&category={{ category | urlencode }}{% endif %}"
      hx-trigger="intersect once"
      hx-swap="outerHTML">
   <div class="loading">Loading more…</div>

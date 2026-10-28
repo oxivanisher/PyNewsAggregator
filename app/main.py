@@ -20,9 +20,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from py_vapid import Vapid
+from sqlalchemy import func
 
 from .config import load_config
-from .db import Article, Feed, HiddenFeed, PushSubscription, ReadArticle, Token, get_engine, get_session
+from .db import (
+    Article, Feed, HiddenCategory, HiddenFeed, PushSubscription, ReadArticle, Token,
+    get_engine, get_session,
+)
 from .fetcher import _sse_queues, broadcast_to_token, start_scheduler, stop_scheduler
 import app.fetcher as fetcher_module
 
@@ -163,6 +167,38 @@ def _hidden_feed_subq(token: str, session):
     )
 
 
+def _hidden_category_subq(token: str, session):
+    return (
+        session.query(HiddenCategory.category)
+        .filter(HiddenCategory.token == token)
+        .scalar_subquery()
+    )
+
+
+def _visible(query, token: str, session, category: Optional[str] = None):
+    """Restrict an Article query to what this token sees, optionally within one category."""
+    query = query.filter(
+        Article.filtered.is_(False),
+        ~Article.feed_id.in_(_hidden_feed_subq(token, session)),
+        ~Article.category.in_(_hidden_category_subq(token, session)),
+    )
+    if category:
+        query = query.filter(Article.category == category)
+    return query
+
+
+def _unread(query, token_obj: Token, session):
+    read_ids_subq = (
+        session.query(ReadArticle.article_id)
+        .filter(ReadArticle.token == token_obj.token)
+        .scalar_subquery()
+    )
+    query = query.filter(~Article.id.in_(read_ids_subq))
+    if token_obj.watermark_at:
+        query = query.filter(Article.published_at > token_obj.watermark_at)
+    return query
+
+
 # ── routes ────────────────────────────────────────────────────────────────────
 
 @app.get("/", response_class=HTMLResponse)
@@ -180,6 +216,7 @@ async def articles(
     request: Request,
     offset: int = 0,
     watermark_shown: int = 0,
+    category: Optional[str] = None,
     news_token: Optional[str] = Cookie(default=None),
 ):
     with get_session(engine) as session:
@@ -190,11 +227,8 @@ async def articles(
             for r in session.query(ReadArticle).filter(ReadArticle.token == token_obj.token)
         }
 
-        hidden_subq = _hidden_feed_subq(token_obj.token, session)
         rows = (
-            session.query(Article, Feed)
-            .join(Feed)
-            .filter(Article.filtered.is_(False), ~Article.feed_id.in_(hidden_subq))
+            _visible(session.query(Article, Feed).join(Feed), token_obj.token, session, category)
             .order_by(Article.published_at.desc(), Article.id.desc())
             .offset(offset)
             .limit(PAGE_SIZE + 1)
@@ -223,6 +257,7 @@ async def articles(
                 "has_more": has_more,
                 "next_offset": offset + len(items),
                 "watermark_shown": next_watermark_shown,
+                "category": category,
             },
         )
 
@@ -231,6 +266,7 @@ async def articles(
 async def articles_prepend(
     request: Request,
     since_id: int = 0,
+    category: Optional[str] = None,
     news_token: Optional[str] = Cookie(default=None),
 ):
     with get_session(engine) as session:
@@ -241,15 +277,13 @@ async def articles_prepend(
             for r in session.query(ReadArticle).filter(ReadArticle.token == token_obj.token)
         }
 
-        hidden_subq = _hidden_feed_subq(token_obj.token, session)
         # Ordered oldest-unseen-first (by id, not published_at) so that when the
         # backlog exceeds PAGE_SIZE, the client's cursor (max id fetched) always
         # advances through *every* row in order — nothing is permanently skipped
         # just because it has an older published_at than other pending rows.
         rows = (
-            session.query(Article, Feed)
-            .join(Feed)
-            .filter(Article.filtered.is_(False), Article.id > since_id, ~Article.feed_id.in_(hidden_subq))
+            _visible(session.query(Article, Feed).join(Feed), token_obj.token, session, category)
+            .filter(Article.id > since_id)
             .order_by(Article.id.asc())
             .limit(PAGE_SIZE)
             .all()
@@ -266,22 +300,13 @@ async def articles_prepend(
 
 
 @app.get("/next-unread")
-async def next_unread_article(news_token: Optional[str] = Cookie(default=None)):
+async def next_unread_article(
+    category: Optional[str] = None,
+    news_token: Optional[str] = Cookie(default=None),
+):
     with get_session(engine) as session:
         token_obj = _ensure_token(news_token, session)
-        read_ids_subq = (
-            session.query(ReadArticle.article_id)
-            .filter(ReadArticle.token == token_obj.token)
-            .scalar_subquery()
-        )
-        hidden_subq = _hidden_feed_subq(token_obj.token, session)
-        query = session.query(Article).filter(
-            Article.filtered.is_(False),
-            ~Article.id.in_(read_ids_subq),
-            ~Article.feed_id.in_(hidden_subq),
-        )
-        if token_obj.watermark_at:
-            query = query.filter(Article.published_at > token_obj.watermark_at)
+        query = _unread(_visible(session.query(Article), token_obj.token, session, category), token_obj, session)
         article = query.order_by(Article.published_at.asc(), Article.id.asc()).first()
         return {"id": article.id if article else None}
 
@@ -311,22 +336,71 @@ async def read_state(ids: str = "", news_token: Optional[str] = Cookie(default=N
 async def unread_count(news_token: Optional[str] = Cookie(default=None)):
     with get_session(engine) as session:
         token_obj = _ensure_token(news_token, session)
+        token = token_obj.token
 
-        read_ids_subq = (
-            session.query(ReadArticle.article_id)
-            .filter(ReadArticle.token == token_obj.token)
-            .scalar_subquery()
+        present = {
+            row[0] for row in _visible(session.query(Article.category).distinct(), token, session)
+        }
+        unread_by_category = dict(
+            _unread(_visible(session.query(Article.category, func.count(Article.id)), token, session),
+                    token_obj, session)
+            .group_by(Article.category)
+            .all()
         )
-        hidden_subq = _hidden_feed_subq(token_obj.token, session)
-        query = session.query(Article).filter(
-            Article.filtered.is_(False),
-            ~Article.id.in_(read_ids_subq),
-            ~Article.feed_id.in_(hidden_subq),
-        )
-        if token_obj.watermark_at:
-            query = query.filter(Article.published_at > token_obj.watermark_at)
+        # Only categories that currently have visible articles get a chip
+        categories = [
+            {"name": name, "unread": unread_by_category.get(name, 0)}
+            for name in config.category_names() if name in present
+        ]
+        return {"unread": sum(unread_by_category.values()), "categories": categories}
 
-        return {"unread": query.count()}
+
+@app.get("/categories")
+async def list_categories(news_token: Optional[str] = Cookie(default=None)):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        hidden = {
+            row[0] for row in session.query(HiddenCategory.category)
+            .filter(HiddenCategory.token == token_obj.token)
+        }
+        counts = dict(
+            session.query(Article.category, func.count(Article.id))
+            .filter(Article.filtered.is_(False))
+            .group_by(Article.category)
+            .all()
+        )
+        return [
+            {"name": name, "article_count": counts.get(name, 0), "hidden": name in hidden}
+            for name in config.category_names()
+        ]
+
+
+@app.post("/categories/toggle")
+async def toggle_category_hidden(name: str, news_token: Optional[str] = Cookie(default=None)):
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        existing = session.get(HiddenCategory, (token_obj.token, name))
+        if existing:
+            session.delete(existing)
+            return {"hidden": False}
+        session.add(HiddenCategory(token=token_obj.token, category=name))
+        return {"hidden": True}
+
+
+@app.post("/categories/mark-read")
+async def mark_category_read(name: str, news_token: Optional[str] = Cookie(default=None)):
+    """Mark every unread article of one category as read (the watermark is global, so rows are written)."""
+    with get_session(engine) as session:
+        token_obj = _ensure_token(news_token, session)
+        token_str = token_obj.token
+        token_obj.last_pushed_at = None
+        ids = [
+            row[0] for row in
+            _unread(_visible(session.query(Article.id), token_str, session, name), token_obj, session)
+        ]
+        session.add_all(ReadArticle(token=token_str, article_id=i) for i in ids)
+    await broadcast_to_token(token_str, {"read_articles": ids})
+    return {"read_ids": ids}
 
 
 @app.get("/feeds")
